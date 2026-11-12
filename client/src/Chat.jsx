@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import NoteForm from "./NoteForm";
 import NoteCard from "./NoteCard";
-import { colorOf } from "./Tree";
+import { colorOf } from "./Network";
 
 const WELCOME = {
   id: "welcome", role: "assistant", kind: "text",
@@ -12,7 +12,7 @@ const looksLikeQuestion = (t) => /^\s*¿/.test(t) || /\?\s*$/.test(t);
 let seq = 0;
 const nextId = () => `m${++seq}`;
 
-export default function Chat({ scenarios, onSaved, onSearch, onShowNote }) {
+export default function Chat({ scenarios, notes, onSaved, onSearch, onShowNote }) {
   const [messages, setMessages] = useState([WELCOME]);
   const [input, setInput] = useState("");
   const [mode, setMode] = useState("learn");
@@ -92,7 +92,7 @@ export default function Chat({ scenarios, onSaved, onSearch, onShowNote }) {
                     <>
                       <p>Esto es lo que entendí. Corrige lo que haga falta y guárdalo en el árbol:</p>
                       <div className="card">
-                        <NoteForm initial={m.draft} scenarios={scenarios} submitLabel="Guardar en el árbol" busy={m.saving}
+                        <NoteForm initial={m.draft} scenarios={scenarios} notes={notes} submitLabel="Guardar en la red" busy={m.saving}
                           onSubmit={(f) => save(m, f)} onCancel={() => replace(m.id, { kind: "text", text: "Descartado. No he guardado nada." })} />
                       </div>
                       {m.error && <p className="error" role="alert">{m.error}</p>}
@@ -100,16 +100,16 @@ export default function Chat({ scenarios, onSaved, onSearch, onShowNote }) {
                   )}
                   {m.kind === "saved" && (
                     <>
-                      <p>Guardado en la rama <strong>{m.note.scenario?.name}</strong>. Tu árbol ha crecido.</p>
-                      <NoteCard note={m.note} color={colorOf(scenarios, m.note.scenario?._id)} onShow={onShowNote} />
+                      <p>Guardado en <strong>{m.note.scenario?.name}</strong>. Tu red ha crecido.</p>
+                      <NoteCard note={m.note} color={colorOf(scenarios, m.note.scenario?._id)} onShow={onShowNote} jumpLabel="Ver en la red" />
                     </>
                   )}
                   {m.kind === "results" && (
                     m.results.length === 0
-                      ? <p>No tengo nada guardado sobre «{m.query}» todavía. Cuando lo aprendas, cuéntamelo y lo añado al árbol.</p>
+                      ? <p>No tengo nada guardado sobre «{m.query}» todavía. Cuando lo aprendas, cuéntamelo y lo añado a la red.</p>
                       : <>
-                          <p>Esto es lo que tienes guardado ({m.results.length} {m.results.length === 1 ? "nota" : "notas"}). Las he iluminado en el árbol:</p>
-                          {m.results.map((n) => <NoteCard key={n._id} note={n} color={colorOf(scenarios, n.scenario?._id)} onShow={onShowNote} />)}
+                          <p>Esto es lo que tienes guardado ({m.results.length} {m.results.length === 1 ? "nota" : "notas"}). Las he iluminado en la red:</p>
+                          {m.results.map((n) => <NoteCard key={n._id} note={n} color={colorOf(scenarios, n.scenario?._id)} onShow={onShowNote} jumpLabel="Ver en la red" />)}
                         </>
                   )}
                 </div>

@@ -12,6 +12,23 @@ const list = (v, maxItems, maxLen, fn = (x) => x) =>
 
 class BadRequest extends Error {}
 
+// Valida los enlaces a otras casuísticas (deben existir y no auto-referenciarse)
+async function relations(raw, selfId) {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set();
+  const items = [];
+  for (const r of raw) {
+    const noteId = text(r?.note, 40);
+    if (!mongoose.isValidObjectId(noteId) || noteId === String(selfId) || seen.has(noteId)) continue;
+    seen.add(noteId);
+    items.push({ note: noteId, reason: text(r?.reason, 200) });
+    if (items.length >= 30) break;
+  }
+  if (!items.length) return [];
+  const existing = new Set((await Note.find({ _id: { $in: items.map((i) => i.note) } }, "_id").lean()).map((n) => String(n._id)));
+  return items.filter((i) => existing.has(i.note));
+}
+
 // Valida lo que llega del formulario de revisión (la persona ya ha corregido lo que propuso la IA)
 function noteFields(body, { partial = false } = {}) {
   const f = {};
@@ -71,10 +88,14 @@ r.get("/notes", wrap(async (req, res) => {
   const search = text(req.query.q, 300);
   if (!search) {
     // shortcut: sin paginar; paginar si el árbol pasa de ~2000 hojas
-    return res.json(await Note.find().sort({ createdAt: 1 }).limit(2000).populate("scenario", "name").lean());
+    return res.json(
+      await Note.find().sort({ createdAt: 1 }).limit(2000)
+        .populate("scenario", "name").populate("relatedNotes.note", "title").lean(),
+    );
   }
   const found = await Note.find({ $text: { $search: search } }, { score: { $meta: "textScore" } })
-    .sort({ score: { $meta: "textScore" } }).limit(30).populate("scenario", "name").lean();
+    .sort({ score: { $meta: "textScore" } }).limit(30)
+    .populate("scenario", "name").populate("relatedNotes.note", "title").lean();
   res.json(rerank(search, found).slice(0, 10));
 }));
 
@@ -91,8 +112,11 @@ r.post("/notes/draft", wrap(async (req, res) => {
 r.post("/notes", wrap(async (req, res) => {
   const f = noteFields(req.body ?? {});
   const scenario = await scenarioByName(f.scenario, req.body?.scenarioDescription);
-  const note = await Note.create({ ...f, scenario: scenario._id });
-  res.status(201).json(await note.populate("scenario", "name"));
+  const relatedNotes = await relations(req.body?.relatedNotes, null);
+  const note = await Note.create({ ...f, scenario: scenario._id, relatedNotes });
+  await note.populate("scenario", "name");
+  await note.populate("relatedNotes.note", "title");
+  res.status(201).json(note);
 }));
 
 r.patch("/notes/:id", wrap(async (req, res) => {
@@ -100,18 +124,24 @@ r.patch("/notes/:id", wrap(async (req, res) => {
   const note = await Note.findById(req.params.id);
   if (!note) return res.status(404).end();
   const f = noteFields(req.body ?? {}, { partial: true });
+  if ("relatedNotes" in (req.body ?? {})) f.relatedNotes = await relations(req.body.relatedNotes, note._id);
   const previous = note.scenario;
   if (f.scenario) f.scenario = (await scenarioByName(f.scenario))._id;
   note.set(f);
   await note.save();
   if (String(previous) !== String(note.scenario)) await prune(previous);
-  res.json(await note.populate("scenario", "name"));
+  await note.populate("scenario", "name");
+  await note.populate("relatedNotes.note", "title");
+  res.json(note);
 }));
 
 r.delete("/notes/:id", wrap(async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).end();
   const note = await Note.findByIdAndDelete(req.params.id);
-  if (note) await prune(note.scenario);
+  if (note) {
+    await prune(note.scenario);
+    await Note.updateMany({ "relatedNotes.note": note._id }, { $pull: { relatedNotes: { note: note._id } } });
+  }
   res.status(204).end();
 }));
 

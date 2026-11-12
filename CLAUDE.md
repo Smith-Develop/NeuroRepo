@@ -1,10 +1,12 @@
 # Mi conocimiento (notas-ia)
 
-App MERN para guardar lo aprendido en el trabajo. Interfaz tipo ChatGPT + un **árbol de conocimiento** visual
-(raíz → ramas = escenarios → hojas = notas) que crece con cada nota. Flujo:
-1. La persona escribe lo que aprendió → una IA **local** (Ollama) propone un borrador (título, resumen, puntos clave, etiquetas, rama).
-2. La persona lo **revisa y corrige** en el chat → solo entonces se guarda.
-3. Al buscar, **la IA no redacta respuestas**: se devuelven las notas guardadas tal cual y se iluminan en el árbol.
+App MERN para guardar lo aprendido en el trabajo. Interfaz tipo ChatGPT + una **red de conocimiento** visual
+tipo red neuronal (cada app/escenario es una neurona central; sus casuísticas son neuronas satélite a su
+alrededor) que crece con cada nota. Las casuísticas se pueden **enlazar entre sí** (de la misma app o de
+otra distinta) cuando una depende de otra; el enlace se dibuja como una sinapsis que cruza entre apps. Flujo:
+1. La persona escribe lo que aprendió → una IA **local** (Ollama) propone un borrador (título, resumen, puntos clave, etiquetas, app).
+2. La persona lo **revisa y corrige** en el chat, y puede enlazarlo con otras casuísticas de las que depende → solo entonces se guarda.
+3. Al buscar, **la IA no redacta respuestas**: se devuelven las notas guardadas tal cual y se iluminan en la red.
 Nada depende de APIs de pago.
 
 ## Stack
@@ -19,16 +21,16 @@ Nada depende de APIs de pago.
   2. `chooseScenario`: elige entre los escenarios existentes con un `enum` cerrado (+ `"NINGUNO"`); si es NINGUNO se usa el área propuesta. Devuelve `isNewScenario`.
 - `server/src/routes.js` – API bajo `/api`:
   - `POST /notes/draft {text}` → borrador de la IA, **no guarda nada**.
-  - `POST /notes {raw,title,summary,keyPoints,tags,scenario,scenarioDescription}` → guarda lo revisado (`noteFields` valida y limita tamaños). La rama se busca por nombre sin distinguir mayúsculas o se crea con un color libre.
-  - `GET /notes` (todas, para el árbol) · `GET /notes?q=` búsqueda `$text` + `rerank` (palabras distintas de la pregunta que aparecen, raíz de 5 letras sin tildes).
-  - `PATCH /notes/:id` (parcial; puede cambiar de rama), `DELETE /notes/:id`. Las ramas que se quedan sin notas se podan (`prune`).
+  - `POST /notes {raw,title,summary,keyPoints,tags,scenario,scenarioDescription,relatedNotes}` → guarda lo revisado (`noteFields` valida y limita tamaños). La app se busca por nombre sin distinguir mayúsculas o se crea con un color libre. `relatedNotes: [{note,reason}]` se valida con `relations()` (deben existir, sin auto-referencia, máx. 30).
+  - `GET /notes` (todas, para la red) · `GET /notes?q=` búsqueda `$text` + `rerank` (palabras distintas de la pregunta que aparecen, raíz de 5 letras sin tildes). Ambas pueblan `relatedNotes.note` (solo `title`).
+  - `PATCH /notes/:id` (parcial; puede cambiar de app o de `relatedNotes`), `DELETE /notes/:id` (borra también las referencias a esa nota en `relatedNotes` de otras). Las apps que se quedan sin notas se podan (`prune`).
   - `GET /scenarios`, `PATCH /scenarios/:id`.
-- `server/src/models.js` – `Scenario {name, description, color}` (`color` = índice de la paleta de 8), `Note`.
+- `server/src/models.js` – `Scenario {name, description, color}` (`color` = índice de la paleta de 8), `Note` (incluye `relatedNotes: [{note, reason}]`, casuísticas de las que depende).
 - `server/src/index.js` – Express, contraseña HTTP Basic (`APP_USER`/`APP_PASSWORD`), sirve `client/dist`, errores (`AIError` → 502).
-- `client/src/Tree.jsx` – SVG propio: dendrograma radial (tronco de hebras, ramas con brillo `feGaussianBlur`, hojas en un arco). Animaciones: crecimiento con `stroke-dashoffset` (solo lo nuevo, por `key` estable), `transition: d` y `transform` al reordenar, pulso en la hoja recién guardada (`freshId`) y en resultados (`highlight`). `PALETTE` debe tener `PALETTE_SIZE` (8) colores, como en `routes.js`.
+- `client/src/Network.jsx` – SVG propio, red tipo neuronal: cada app es una neurona central (posición fija en un anillo); sus casuísticas son neuronas satélite colocadas con una simulación de fuerzas minimalista escrita a mano (repulsión + resorte hacia su app + resorte en cada enlace cruzado, sin librería). Los enlaces (`relatedNotes`) se dibujan como «sinapsis» discontinuas que pueden cruzar entre apps. La etiqueta de cada app se coloca en el lado contrario a sus casuísticas para no solaparse. `PALETTE` debe tener `PALETTE_SIZE` (8) colores, como en `routes.js`.
 - `client/src/Chat.jsx` – chat estilo ChatGPT. Modos «Aprendí algo» / «Buscar» (pasa solo a Buscar si el texto empieza por «¿» o termina en «?»). Mensajes tipo `text|loading|error|draft|saved|results`. El historial vive solo en memoria.
-- `client/src/NoteForm.jsx` – formulario de revisión/edición (reutilizado en el chat y en el panel de la hoja). `NoteCard.jsx` – nota guardada.
-- `client/src/App.jsx` – layout (árbol | chat; en móvil, pestañas), carga de datos, panel de la hoja seleccionada (ver/editar/borrar).
+- `client/src/NoteForm.jsx` – formulario de revisión/edición (reutilizado en el chat y en el panel de la nota), incluye el editor de «Depende de» (busca por título entre las notas ya cargadas, con motivo opcional). `NoteCard.jsx` – nota guardada, muestra sus enlaces como botones que navegan a la otra nota.
+- `client/src/App.jsx` – layout (red | chat; en móvil, pestañas), carga de datos, panel de la nota seleccionada (ver/editar/borrar). `showNote` siempre resuelve contra la lista completa de `notes` en memoria, aunque se le pase una nota parcial (p. ej. desde un enlace).
 
 ## Decisiones (no revertir sin motivo)
 - Los prompts se probaron con qwen2.5:3b: con un solo paso, o pidiendo "reutilizar escenarios", el modelo mete todo en el primer escenario. El esquema de 2 pasos acertó 6/8 en las pruebas.

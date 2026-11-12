@@ -34,7 +34,7 @@ services:
     environment: [OLLAMA_HOST=ollama:11434]
     entrypoint: ["ollama", "pull", "${OLLAMA_MODEL:-qwen2.5:3b}"]
     restart: "no"
-    exclude_from_hc: true
+    x-exclude_from_hc: true
 
 volumes:
   mongo-data:

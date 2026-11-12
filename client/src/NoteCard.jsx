@@ -1,5 +1,5 @@
-// Muestra una nota tal y como está guardada en el árbol
-export default function NoteCard({ note, color, onShow }) {
+// Muestra una nota tal y como está guardada en la red
+export default function NoteCard({ note, color, onShow, jumpLabel }) {
   return (
     <article className="note-card" style={{ "--c": color }}>
       <header>
@@ -9,11 +9,26 @@ export default function NoteCard({ note, color, onShow }) {
       {note.summary && <p>{note.summary}</p>}
       {note.keyPoints?.length > 0 && <ul>{note.keyPoints.map((k, i) => <li key={i}>{k}</li>)}</ul>}
       {note.tags?.length > 0 && <p className="tags">{note.tags.map((t) => `#${t}`).join("  ")}</p>}
+      {note.relatedNotes?.length > 0 && (
+        <p className="tags rel-tags">
+          Depende de:{" "}
+          {note.relatedNotes.map((r, i) => (
+            <span key={r.note?._id ?? i}>
+              {i > 0 && ", "}
+              {onShow && r.note?._id ? (
+                <button type="button" className="link" onClick={() => onShow(r.note)}>{r.note.title}</button>
+              ) : (
+                r.note?.title
+              )}
+            </span>
+          ))}
+        </p>
+      )}
       <details>
         <summary>Lo que escribiste</summary>
         <p className="raw">{note.raw}</p>
       </details>
-      {onShow && <button className="link" onClick={() => onShow(note)}>Ver en el árbol</button>}
+      {jumpLabel && onShow && <button className="link" onClick={() => onShow(note)}>{jumpLabel}</button>}
     </article>
   );
 }

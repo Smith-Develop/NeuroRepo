@@ -9,6 +9,14 @@ const scenarioSchema = new mongoose.Schema(
   { timestamps: true },
 );
 
+const relatedNoteSchema = new mongoose.Schema(
+  {
+    note: { type: mongoose.Schema.Types.ObjectId, ref: "Note", required: true },
+    reason: { type: String, default: "" }, // por qué dependen una de otra
+  },
+  { _id: false },
+);
+
 const noteSchema = new mongoose.Schema(
   {
     raw: { type: String, required: true }, // lo que escribiste tal cual
@@ -17,6 +25,7 @@ const noteSchema = new mongoose.Schema(
     keyPoints: [String],
     tags: { type: [String], index: true },
     scenario: { type: mongoose.Schema.Types.ObjectId, ref: "Scenario", required: true, index: true },
+    relatedNotes: { type: [relatedNoteSchema], default: [] }, // casuísticas de otras apps de las que depende
   },
   { timestamps: true },
 );
