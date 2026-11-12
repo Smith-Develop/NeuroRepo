@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import Network, { colorOf } from "./Network";
 import Chat from "./Chat";
@@ -15,6 +15,9 @@ export default function App() {
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [view, setView] = useState("chat"); // solo en móvil
+  const [chatOpen, setChatOpen] = useState(true);
+  const [chatWidth, setChatWidth] = useState(420);
+  const resizing = useRef(false);
 
   const load = useCallback(async () => {
     try {
@@ -42,6 +45,19 @@ export default function App() {
     setEditing(false);
   }
 
+  function startResize(e) {
+    resizing.current = true;
+    e.target.setPointerCapture(e.pointerId);
+  }
+  function onResize(e) {
+    if (!resizing.current) return;
+    const min = 300, max = window.innerWidth - 320;
+    setChatWidth(Math.min(Math.max(window.innerWidth - e.clientX, min), max));
+  }
+  function stopResize() {
+    resizing.current = false;
+  }
+
   async function update(fields) {
     setBusy(true);
     try {
@@ -62,10 +78,10 @@ export default function App() {
   }
 
   return (
-    <div className={`app view-${view}`}>
+    <div className={`app view-${view}`} style={{ "--chat-w": chatOpen ? `${chatWidth}px` : "0px" }}>
       <nav className="mobile-tabs" aria-label="Vista">
         <button className={view === "tree" ? "on" : ""} onClick={() => setView("tree")}>Red</button>
-        <button className={view === "chat" ? "on" : ""} onClick={() => setView("chat")}>Chat</button>
+        <button className={view === "chat" ? "on" : ""} onClick={() => { setView("chat"); setChatOpen(true); }}>Chat</button>
       </nav>
 
       <main className="tree-pane">
@@ -80,24 +96,33 @@ export default function App() {
         {selected && (
           <aside className="drawer" aria-label="Nota seleccionada">
             <button className="close" onClick={close} aria-label="Cerrar">×</button>
-            {editing ? (
-              <NoteForm key={selected._id} initial={selected} scenarios={scenarios} notes={notes} submitLabel="Guardar cambios" cancelLabel="Cancelar" busy={busy}
-                onSubmit={update} onCancel={() => setEditing(false)} />
-            ) : (
-              <>
-                <NoteCard note={selected} color={colorOf(scenarios, selected.scenario?._id)} onShow={showNote} />
-                <div className="actions">
-                  <button className="ghost" onClick={remove} disabled={busy}>Borrar</button>
-                  <button onClick={() => setEditing(true)}>Editar</button>
-                </div>
-              </>
-            )}
+            <div className="drawer-inner">
+              {editing ? (
+                <NoteForm key={selected._id} initial={selected} scenarios={scenarios} notes={notes} submitLabel="Guardar cambios" cancelLabel="Cancelar" busy={busy}
+                  onSubmit={update} onCancel={() => setEditing(false)} />
+              ) : (
+                <>
+                  <NoteCard note={selected} color={colorOf(scenarios, selected.scenario?._id)} onShow={showNote} />
+                  <div className="actions">
+                    <button className="ghost" onClick={remove} disabled={busy}>Borrar</button>
+                    <button onClick={() => setEditing(true)}>Editar</button>
+                  </div>
+                </>
+              )}
+            </div>
           </aside>
         )}
       </main>
 
-      <Chat scenarios={scenarios} notes={notes} onSaved={onSaved} onShowNote={showNote}
-        onSearch={(ids) => setHighlight(ids.length ? new Set(ids) : null)} />
+      {chatOpen && (
+        <div className="resizer" onPointerDown={startResize} onPointerMove={onResize} onPointerUp={stopResize} role="separator" aria-orientation="vertical" aria-label="Redimensionar chat" />
+      )}
+      {chatOpen ? (
+        <Chat scenarios={scenarios} notes={notes} onSaved={onSaved} onShowNote={showNote} onToggle={() => setChatOpen(false)}
+          onSearch={(ids) => setHighlight(ids.length ? new Set(ids) : null)} />
+      ) : (
+        <button className="chat-reopen" onClick={() => setChatOpen(true)} aria-label="Abrir chat">💬</button>
+      )}
     </div>
   );
 }

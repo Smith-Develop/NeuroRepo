@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import NoteForm from "./NoteForm";
 import NoteCard from "./NoteCard";
+import Builder from "./Builder";
 import { colorOf } from "./Network";
 
 const WELCOME = {
@@ -12,7 +13,7 @@ const looksLikeQuestion = (t) => /^\s*¿/.test(t) || /\?\s*$/.test(t);
 let seq = 0;
 const nextId = () => `m${++seq}`;
 
-export default function Chat({ scenarios, notes, onSaved, onSearch, onShowNote }) {
+export default function Chat({ scenarios, notes, onSaved, onSearch, onShowNote, onToggle }) {
   const [messages, setMessages] = useState([WELCOME]);
   const [input, setInput] = useState("");
   const [mode, setMode] = useState("learn");
@@ -70,8 +71,27 @@ export default function Chat({ scenarios, notes, onSaved, onSearch, onShowNote }
     }
   }
 
+  function openBuilder() {
+    push({ id: nextId(), role: "assistant", kind: "builder" });
+  }
+
+  async function saveManual(msg, fields) {
+    replace(msg.id, { saving: true, error: null });
+    try {
+      const note = await api.createNote(fields);
+      replace(msg.id, { kind: "saved", note, saving: false });
+      onSaved(note);
+    } catch (err) {
+      replace(msg.id, { saving: false, error: err.message });
+    }
+  }
+
   return (
     <section className="chat" aria-label="Chat">
+      <header className="chat-head">
+        <span>Chat</span>
+        <button type="button" className="ghost small" onClick={onToggle} aria-label="Ocultar chat">Ocultar ›</button>
+      </header>
       <div className="messages" aria-live="polite">
         {messages.map((m) => (
           <div key={m.id} className={`msg ${m.role}`}>
@@ -94,6 +114,16 @@ export default function Chat({ scenarios, notes, onSaved, onSearch, onShowNote }
                       <div className="card">
                         <NoteForm initial={m.draft} scenarios={scenarios} notes={notes} submitLabel="Guardar en la red" busy={m.saving}
                           onSubmit={(f) => save(m, f)} onCancel={() => replace(m.id, { kind: "text", text: "Descartado. No he guardado nada." })} />
+                      </div>
+                      {m.error && <p className="error" role="alert">{m.error}</p>}
+                    </>
+                  )}
+                  {m.kind === "builder" && (
+                    <>
+                      <p>Monta tu casuística pieza a pieza, sin pasar por la IA:</p>
+                      <div className="card">
+                        <Builder scenarios={scenarios} notes={notes} busy={m.saving}
+                          onSubmit={(f) => saveManual(m, f)} onCancel={() => replace(m.id, { kind: "text", text: "Descartado. No he guardado nada." })} />
                       </div>
                       {m.error && <p className="error" role="alert">{m.error}</p>}
                     </>
@@ -127,6 +157,7 @@ export default function Chat({ scenarios, notes, onSaved, onSearch, onShowNote }
               {label}
             </button>
           ))}
+          <button type="button" className="build-btn" onClick={openBuilder}>🧱 Construir</button>
         </div>
         <div className="input-row">
           <textarea ref={inputRef} rows={1} value={input} onChange={onType} aria-label="Mensaje"
