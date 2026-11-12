@@ -14,6 +14,7 @@ export const api = {
   scenarios: () => req("/scenarios"),
   notes: (q) => req(`/notes${q ? `?q=${encodeURIComponent(q)}` : ""}`),
   draft: (text) => req("/notes/draft", { method: "POST", body: { text } }),
+  ask: (question) => req("/ask", { method: "POST", body: { question } }),
   createNote: (body) => req("/notes", { method: "POST", body }),
   updateNote: (id, body) => req(`/notes/${id}`, { method: "PATCH", body }),
   deleteNote: (id) => req(`/notes/${id}`, { method: "DELETE" }),

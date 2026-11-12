@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useMemo, useRef, useState } from "react";
 
 export const PALETTE = ["#7aa2ff", "#c084fc", "#5eead4", "#facc15", "#f472b6", "#4ade80", "#fb923c", "#38bdf8"];
 // Color guardado en cada app (estable aunque se poden otras)
@@ -106,16 +106,56 @@ function layout(scenarios, notes) {
   return { hubs, sats, links };
 }
 
+const ZOOM_MIN = 0.4, ZOOM_MAX = 4;
+
 export default function Network({ scenarios, notes, highlight, selectedId, freshId, onSelect }) {
-  const { hubs, sats, links, box } = useMemo(() => {
+  const { hubs, sats, links, vx, vy, vw, vh } = useMemo(() => {
     const { hubs, sats, links } = layout(scenarios, notes);
     const xs = [CX, ...hubs.map((h) => h.x), ...sats.map((s) => s.x)];
     const ys = [CY, ...hubs.map((h) => h.y), ...sats.map((s) => s.y)];
     const pad = 90;
     const minX = Math.min(...xs) - pad, maxX = Math.max(...xs) + pad;
     const minY = Math.min(...ys) - pad, maxY = Math.max(...ys) + pad;
-    return { hubs, sats, links, box: `${minX} ${minY} ${maxX - minX} ${maxY - minY}` };
+    return { hubs, sats, links, vx: minX, vy: minY, vw: maxX - minX, vh: maxY - minY };
   }, [scenarios, notes]);
+
+  const [cam, setCam] = useState({ x: 0, y: 0, k: 1 });
+  const panRef = useRef(null);
+
+  function zoomAt(px, py, factor) {
+    setCam((c) => {
+      const k = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, c.k * factor));
+      const dk = k / c.k;
+      return { k, x: c.x * dk + px * (1 - dk), y: c.y * dk + py * (1 - dk) };
+    });
+  }
+  function onWheel(e) {
+    e.preventDefault();
+    const rect = e.currentTarget.getBoundingClientRect();
+    const px = vx + ((e.clientX - rect.left) / rect.width) * vw;
+    const py = vy + ((e.clientY - rect.top) / rect.height) * vh;
+    zoomAt(px, py, e.deltaY < 0 ? 1.15 : 1 / 1.15);
+  }
+  function zoomButton(factor) {
+    zoomAt(vx + vw / 2, vy + vh / 2, factor);
+  }
+  function resetView() {
+    setCam({ x: 0, y: 0, k: 1 });
+  }
+  function onPanDown(e) {
+    panRef.current = { startX: e.clientX, startY: e.clientY, cam };
+    e.currentTarget.setPointerCapture(e.pointerId);
+  }
+  function onPanMove(e) {
+    if (!panRef.current) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const scaleX = vw / rect.width, scaleY = vh / rect.height;
+    const { startX, startY, cam: base } = panRef.current;
+    setCam({ ...base, x: base.x + (e.clientX - startX) * scaleX, y: base.y + (e.clientY - startY) * scaleY });
+  }
+  function onPanUp() {
+    panRef.current = null;
+  }
 
   const dim = highlight && highlight.size > 0;
   const n = sats.length;
@@ -124,8 +164,9 @@ export default function Network({ scenarios, notes, highlight, selectedId, fresh
   const showLabels = n <= 140;
 
   return (
-    <svg className="tree" viewBox={box} preserveAspectRatio="xMidYMid meet" role="img"
-      aria-label={`Red de conocimiento con ${hubs.length} apps y ${n} casuísticas`}>
+    <div className="network-wrap">
+    <svg className="tree" viewBox={`${vx} ${vy} ${vw} ${vh}`} preserveAspectRatio="xMidYMid meet" role="img"
+      aria-label={`Red de conocimiento con ${hubs.length} apps y ${n} casuísticas`} onWheel={onWheel}>
       <defs>
         <filter id="glow" x="-80%" y="-80%" width="260%" height="260%">
           <feGaussianBlur stdDeviation="4" result="b" />
@@ -137,12 +178,16 @@ export default function Network({ scenarios, notes, highlight, selectedId, fresh
         </filter>
       </defs>
 
+      <rect className="pan-surface" x={vx} y={vy} width={vw} height={vh}
+        onPointerDown={onPanDown} onPointerMove={onPanMove} onPointerUp={onPanUp} onPointerLeave={onPanUp} />
+
       {hubs.length === 0 && (
         <text x={CX} y={CY - 20} textAnchor="middle" className="empty-label">
           Cuéntale al chat lo que aprendiste y la red empezará a crecer
         </text>
       )}
 
+      <g transform={`translate(${cam.x} ${cam.y}) scale(${cam.k})`}>
       {links.map(([a, b], i) => {
         const sa = sats[a], sb = sats[b];
         const on = !dim || highlight.has(sa.note._id) || highlight.has(sb.note._id);
@@ -186,6 +231,13 @@ export default function Network({ scenarios, notes, highlight, selectedId, fresh
           </g>
         );
       })}
+      </g>
     </svg>
+      <div className="zoom-controls">
+        <button type="button" onClick={() => zoomButton(1.25)} aria-label="Acercar">+</button>
+        <button type="button" onClick={() => zoomButton(1 / 1.25)} aria-label="Alejar">−</button>
+        <button type="button" onClick={resetView} aria-label="Restablecer zoom">⟲</button>
+      </div>
+    </div>
   );
 }

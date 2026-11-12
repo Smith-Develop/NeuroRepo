@@ -23,8 +23,8 @@ small { color: var(--muted); font-weight: 400; }
 .resizer { width: 6px; cursor: col-resize; background: var(--line); touch-action: none; }
 .resizer:hover, .resizer:active { background: var(--accent); }
 .chat-reopen {
-  position: fixed; right: 20px; bottom: 20px; z-index: 40; width: 48px; height: 48px; border-radius: 50%;
-  font-size: 1.3rem; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 16px rgba(0, 0, 0, .5);
+  position: fixed; right: 20px; top: 16px; z-index: 40; width: 44px; height: 44px; border-radius: 50%;
+  font-size: 1.2rem; display: flex; align-items: center; justify-content: center; box-shadow: 0 4px 16px rgba(0, 0, 0, .5);
 }
 
 /* ---------- Árbol ---------- */
@@ -40,7 +40,15 @@ small { color: var(--muted); font-weight: 400; }
 .tree-head { position: absolute; top: 16px; left: 20px; z-index: 1; display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
 .tree-head h1 { font-size: 1rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; margin: 0; }
 .tree-head p { margin: 0; color: var(--muted); font-size: .85rem; }
-.tree { flex: 1; width: 100%; min-height: 0; margin-top: 56px; }
+.network-wrap { flex: 1; min-height: 0; margin-top: 56px; position: relative; display: flex; }
+.tree { flex: 1; width: 100%; height: 100%; min-height: 0; touch-action: none; }
+.pan-surface { fill: transparent; cursor: grab; }
+.pan-surface:active { cursor: grabbing; }
+.zoom-controls { position: absolute; right: 16px; bottom: 16px; z-index: 2; display: flex; flex-direction: column; gap: 6px; }
+.zoom-controls button {
+  width: 36px; height: 36px; padding: 0; border-radius: 10px; background: var(--panel-2); color: var(--text);
+  border: 1px solid var(--line); font-size: 1.15rem; line-height: 1; display: flex; align-items: center; justify-content: center;
+}
 
 .dendrite { stroke: var(--c); stroke-width: 1.1; opacity: .5; transition: opacity .4s; }
 .synapse { stroke: #fbbf24; stroke-width: 1.3; stroke-dasharray: 3 4; opacity: .55; transition: opacity .4s; }
@@ -65,12 +73,17 @@ small { color: var(--muted); font-weight: 400; }
 .leaf.fresh .halo { animation: pulse 1.2s ease-in-out .15s 4; }
 @keyframes pulse { 0%, 100% { opacity: 0; } 50% { opacity: .45; } }
 
-.drawer {
-  position: fixed; inset: 0; overflow: auto; z-index: 50;
-  background: var(--panel); padding: 64px 20px 40px;
+.modal-backdrop {
+  position: fixed; inset: 0; z-index: 50; background: rgba(4, 5, 8, .7); backdrop-filter: blur(2px);
+  display: flex; align-items: center; justify-content: center; padding: 24px;
 }
-.drawer .close { position: fixed; top: 16px; right: 20px; background: var(--panel-2); color: var(--muted); font-size: 1.4rem; padding: 4px 14px; border-radius: 999px; z-index: 51; }
-.drawer-inner { max-width: 720px; margin: 0 auto; }
+.drawer {
+  position: relative; width: min(480px, 100%); max-height: min(78vh, 640px); overflow: auto;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 20px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, .5);
+}
+.drawer .close { position: absolute; top: 10px; right: 10px; background: var(--panel-2); color: var(--muted); font-size: 1.3rem; padding: 2px 12px; border-radius: 999px; }
+.drawer-inner { max-width: none; margin: 0; }
 .toast { position: absolute; left: 20px; bottom: 16px; background: var(--panel); padding: 8px 12px; border-radius: 10px; cursor: pointer; }
 .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 
@@ -108,6 +121,8 @@ small { color: var(--muted); font-weight: 400; }
 .tags { color: var(--accent); font-size: .85rem; }
 .raw { white-space: pre-wrap; color: var(--muted); }
 details summary { cursor: pointer; color: var(--muted); font-size: .85rem; }
+.sources { margin-top: 10px; }
+.sources summary { margin-bottom: 6px; }
 
 .composer { padding: 10px 16px 14px; }
 .modes { display: flex; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }

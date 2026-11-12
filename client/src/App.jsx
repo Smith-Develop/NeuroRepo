@@ -94,23 +94,25 @@ export default function App() {
         {error && <p className="error toast" role="alert" onClick={() => setError("")}>{error}</p>}
 
         {selected && (
-          <aside className="drawer" aria-label="Nota seleccionada">
-            <button className="close" onClick={close} aria-label="Cerrar">×</button>
-            <div className="drawer-inner">
-              {editing ? (
-                <NoteForm key={selected._id} initial={selected} scenarios={scenarios} notes={notes} submitLabel="Guardar cambios" cancelLabel="Cancelar" busy={busy}
-                  onSubmit={update} onCancel={() => setEditing(false)} />
-              ) : (
-                <>
-                  <NoteCard note={selected} color={colorOf(scenarios, selected.scenario?._id)} onShow={showNote} />
-                  <div className="actions">
-                    <button className="ghost" onClick={remove} disabled={busy}>Borrar</button>
-                    <button onClick={() => setEditing(true)}>Editar</button>
-                  </div>
-                </>
-              )}
-            </div>
-          </aside>
+          <div className="modal-backdrop" onClick={close}>
+            <aside className="drawer" aria-label="Nota seleccionada" onClick={(e) => e.stopPropagation()}>
+              <button className="close" onClick={close} aria-label="Cerrar">×</button>
+              <div className="drawer-inner">
+                {editing ? (
+                  <NoteForm key={selected._id} initial={selected} scenarios={scenarios} notes={notes} submitLabel="Guardar cambios" cancelLabel="Cancelar" busy={busy}
+                    onSubmit={update} onCancel={() => setEditing(false)} />
+                ) : (
+                  <>
+                    <NoteCard note={selected} color={colorOf(scenarios, selected.scenario?._id)} onShow={showNote} />
+                    <div className="actions">
+                      <button className="ghost" onClick={remove} disabled={busy}>Borrar</button>
+                      <button onClick={() => setEditing(true)}>Editar</button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </aside>
+          </div>
         )}
       </main>
 

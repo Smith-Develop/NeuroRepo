@@ -6,7 +6,7 @@ alrededor) que crece con cada nota. Las casuísticas se pueden **enlazar entre s
 otra distinta) cuando una depende de otra; el enlace se dibuja como una sinapsis que cruza entre apps. Flujo:
 1. La persona escribe lo que aprendió → una IA **local** (Ollama) propone un borrador (título, resumen, puntos clave, etiquetas, app).
 2. La persona lo **revisa y corrige** en el chat, y puede enlazarlo con otras casuísticas de las que depende → solo entonces se guarda.
-3. Al buscar, **la IA no redacta respuestas**: se devuelven las notas guardadas tal cual y se iluminan en la red.
+3. Al buscar, la IA **redacta una respuesta en lenguaje natural** usando solo las notas que encontró la búsqueda de texto (nunca inventa); esas notas quedan como referencia plegada y se iluminan en la red.
 Nada depende de APIs de pago.
 
 ## Stack
@@ -16,35 +16,37 @@ Nada depende de APIs de pago.
 - MongoDB 7. Índice de texto en español sobre las notas (`server/src/models.js`).
 
 ## Archivos clave
-- `server/src/ai.js` – solo clasifica (Ollama, `fetch`). `classifyNote` en **2 pasos**:
+- `server/src/ai.js` – llamadas a Ollama (`fetch`). `classifyNote` en **2 pasos**:
   1. Analiza la nota con JSON Schema (`format`) → título, resumen, keyPoints, tags, área propuesta. No ve los escenarios existentes, para no sesgarlo.
   2. `chooseScenario`: elige entre los escenarios existentes con un `enum` cerrado (+ `"NINGUNO"`); si es NINGUNO se usa el área propuesta. Devuelve `isNewScenario`.
+  `answerQuestion(question, notes)` – responde en texto libre (sin JSON Schema) usando solo las notas que le pasa `routes.js` (máx. 6, recortadas a 1500 caracteres cada una); nunca ve notas que la búsqueda no encontró.
 - `server/src/routes.js` – API bajo `/api`:
   - `POST /notes/draft {text}` → borrador de la IA, **no guarda nada**.
   - `POST /notes {raw,title,summary,keyPoints,tags,scenario,scenarioDescription,relatedNotes}` → guarda lo revisado (`noteFields` valida y limita tamaños). La app se busca por nombre sin distinguir mayúsculas o se crea con un color libre. `relatedNotes: [{note,reason}]` se valida con `relations()` (deben existir, sin auto-referencia, máx. 30).
-  - `GET /notes` (todas, para la red) · `GET /notes?q=` búsqueda `$text` + `rerank` (palabras distintas de la pregunta que aparecen, raíz de 5 letras sin tildes). Ambas pueblan `relatedNotes.note` (solo `title`).
+  - `GET /notes` (todas, para la red) · `GET /notes?q=` búsqueda `$text` + `rerank` (palabras distintas de la pregunta que aparecen, raíz de 5 letras sin tildes), devuelve las notas tal cual (usado por `NoteForm`/`Builder` para enlazar). Ambas pueblan `relatedNotes.note` (solo `title`).
+  - `POST /ask {question}` → reutiliza la misma búsqueda (`searchNotes`) y le pide a `answerQuestion` una respuesta en lenguaje natural; devuelve `{answer, notes}` (`answer: null` si la búsqueda no encontró nada, sin llamar a la IA).
   - `PATCH /notes/:id` (parcial; puede cambiar de app o de `relatedNotes`), `DELETE /notes/:id` (borra también las referencias a esa nota en `relatedNotes` de otras). Las apps que se quedan sin notas se podan (`prune`).
   - `GET /scenarios`, `PATCH /scenarios/:id`.
 - `server/src/models.js` – `Scenario {name, description, color}` (`color` = índice de la paleta de 8), `Note` (incluye `relatedNotes: [{note, reason}]`, casuísticas de las que depende).
 - `server/src/index.js` – Express, contraseña HTTP Basic (`APP_USER`/`APP_PASSWORD`), sirve `client/dist`, errores (`AIError` → 502).
-- `client/src/Network.jsx` – SVG propio, red tipo neuronal: cada app es una neurona central (posición fija en un anillo); sus casuísticas son neuronas satélite colocadas con una simulación de fuerzas minimalista escrita a mano (repulsión + resorte hacia su app + resorte en cada enlace cruzado, sin librería). Los enlaces (`relatedNotes`) se dibujan como «sinapsis» discontinuas que pueden cruzar entre apps. La etiqueta de cada app se coloca en el lado contrario a sus casuísticas para no solaparse. `PALETTE` debe tener `PALETTE_SIZE` (8) colores, como en `routes.js`.
-- `client/src/Chat.jsx` – chat estilo ChatGPT. Modos «Aprendí algo» / «Buscar» (pasa solo a Buscar si el texto empieza por «¿» o termina en «?»). Mensajes tipo `text|loading|error|draft|saved|results`. El historial vive solo en memoria.
-- `client/src/NoteForm.jsx` – formulario de revisión/edición (reutilizado en el chat y en el panel de la nota), incluye el editor de «Depende de» (busca por título entre las notas ya cargadas, con motivo opcional). `NoteCard.jsx` – nota guardada, muestra sus enlaces como botones que navegan a la otra nota.
-- `client/src/App.jsx` – layout (red | chat; en móvil, pestañas), carga de datos, panel de la nota seleccionada (ver/editar/borrar). `showNote` siempre resuelve contra la lista completa de `notes` en memoria, aunque se le pase una nota parcial (p. ej. desde un enlace).
+- `client/src/Network.jsx` – SVG propio, red tipo neuronal: cada app es una neurona central (posición fija en un anillo); sus casuísticas son neuronas satélite colocadas con una simulación de fuerzas minimalista escrita a mano (repulsión + resorte hacia su app + resorte en cada enlace cruzado, sin librería). Los enlaces (`relatedNotes`) se dibujan como «sinapsis» discontinuas que pueden cruzar entre apps. La etiqueta de cada app se coloca en el lado contrario a sus casuísticas para no solaparse. `PALETTE` debe tener `PALETTE_SIZE` (8) colores, como en `routes.js`. Zoom/pan manual (rueda del ratón centrada en el cursor, arrastre y botones +/−/reset) con una `<g transform>` interna; `vx,vy,vw,vh` son el viewBox fijo, `cam` es la cámara interactiva.
+- `client/src/Chat.jsx` – chat estilo ChatGPT. Modos «Aprendí algo» / «Buscar» (pasa solo a Buscar si el texto empieza por «¿» o termina en «?») y acción «Construir» (abre `Builder.jsx`). Mensajes tipo `text|loading|error|draft|saved|answer|builder`. En `answer`, `m.answer` es la respuesta en lenguaje natural de la IA (o `null` si no encontró nada) y `m.results` son las notas usadas, mostradas plegadas en un `<details>`. El historial vive solo en memoria. El panel tiene cabecera con botón para ocultarlo (`onToggle`, controlado por `App.jsx`).
+- `client/src/NoteForm.jsx` – formulario de revisión/edición (reutilizado en el chat y en el panel de la nota), incluye el editor de «Depende de» (busca por título entre las notas ya cargadas, con motivo opcional). `client/src/Builder.jsx` – constructor manual sin IA: piezas arrastrables (pointer events) que se sueltan en una zona de montaje y despliegan su campo; sintetiza `raw` a partir de lo escrito. `NoteCard.jsx` – nota guardada, muestra sus enlaces como botones que navegan a la otra nota.
+- `client/src/App.jsx` – layout (red | chat redimensionable/ocultable con un divisor arrastrable, `--chat-w`; en móvil, pestañas), carga de datos, modal centrado (`.modal-backdrop` + `.drawer`) con la nota seleccionada (ver/editar/borrar), se cierra pulsando fuera o con «×». `showNote` siempre resuelve contra la lista completa de `notes` en memoria, aunque se le pase una nota parcial (p. ej. desde un enlace).
 
 ## Decisiones (no revertir sin motivo)
 - Los prompts se probaron con qwen2.5:3b: con un solo paso, o pidiendo "reutilizar escenarios", el modelo mete todo en el primer escenario. El esquema de 2 pasos acertó 6/8 en las pruebas.
 - No dar ejemplos de nombres de escenario en el prompt: el modelo 3B los copia literalmente.
 - El orden de campos del esquema importa (primero entender la nota, al final el área).
-- La búsqueda nunca genera texto con la IA (antes inventaba); solo devuelve lo guardado.
-- `temperature: 0` para clasificar, `num_ctx: 8192`, timeout 300 s (en CPU tarda ~20-27 s por borrador; la búsqueda es instantánea).
+- `answerQuestion` solo ve las notas que ya encontró la búsqueda de texto (nunca el total de la base): así no inventa sobre temas sin notas guardadas.
+- `temperature: 0` para clasificar, `num_ctx: 8192`, timeout 300 s (en CPU tarda ~20-27 s por borrador y ~10-15 s por pregunta).
 - En `NODE_ENV=production` la app no arranca sin `APP_PASSWORD`. Ollama nunca publica su puerto.
 
 ## Ejecutar
 - Docker local: `docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build` → http://localhost:4000 (requiere `APP_PASSWORD` en el entorno o en `.env`).
 - Desarrollo: `ollama pull qwen2.5:3b`, MongoDB en marcha, `cd server && cp .env.example .env && npm run dev`, `cd client && npm run dev` → http://localhost:5173 (Vite hace proxy de `/api` a :4000).
 - Comprobaciones rápidas: `node --check server/src/*.js`, `cd client && npm run build`. No hay tests automatizados todavía.
-- Pendientes conocidos: zoom/arrastre del árbol (en móvil se ve pequeño), paginar `GET /notes` si pasa de ~2000 hojas, guardar el historial del chat.
+- Pendientes conocidos: paginar `GET /notes` si pasa de ~2000 hojas, guardar el historial del chat.
 
 ## Despliegue (Coolify)
 - `docker-compose.yml` está preparado para Coolify (`SERVICE_FQDN_APP_4000`, sin puertos publicados).

@@ -98,3 +98,23 @@ export async function classifyNote(text, scenarios) {
   const { area, areaDescription, ...rest } = a;
   return { ...rest, scenario: existing ?? area, scenarioDescription: areaDescription, isNewScenario: !existing };
 }
+
+// Responde una pregunta en lenguaje natural usando solo las notas que ya encontró la búsqueda de texto
+const ASK_SYSTEM = `Eres el asistente de la base de conocimiento de trabajo de una persona. Te paso notas que ella ya guardó.
+Responde a su pregunta en un par de frases claras y directas, como alguien que conoce el tema y no está adivinando.
+Usa solo lo que dicen las notas, con sus pasos y nombres exactos (comandos, rutas, nombres de servicios) cuando los haya.
+Si varias notas tratan lo mismo, combínalas en una sola respuesta coherente; no las repitas una por una ni copies todo el contenido.
+Si las notas no responden realmente a la pregunta, dilo con naturalidad en vez de forzar una respuesta.
+Responde en el idioma de la pregunta, sin inventar nada que no esté en las notas.`;
+
+export async function answerQuestion(question, notes) {
+  const context = notes.slice(0, 6).map((n, i) => {
+    const points = (n.keyPoints ?? []).map((k) => `- ${k}`).join("\n");
+    return `### Nota ${i + 1}: ${n.title}\n${n.summary ?? ""}\n${points}\n${(n.raw ?? "").slice(0, 1500)}`;
+  }).join("\n\n");
+  const content = await chat([
+    { role: "system", content: ASK_SYSTEM },
+    { role: "user", content: `Notas guardadas:\n\n${context}\n\nPregunta: ${question}` },
+  ]);
+  return content.trim();
+}

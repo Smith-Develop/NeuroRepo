@@ -7,7 +7,7 @@ import { colorOf } from "./Network";
 
 const WELCOME = {
   id: "welcome", role: "assistant", kind: "text",
-  text: "Hola. Cuéntame qué aprendiste hoy, tal como te salga. Te propondré un resumen para que lo revises antes de guardarlo en tu árbol.\n\nSi quieres consultar algo, cambia a «Buscar» (o empieza con «¿») y te enseñaré lo que ya tienes guardado.",
+  text: "Hola, soy tu asistente de conocimiento. Cuéntame qué aprendiste hoy, tal como se lo explicarías a un compañero, y te propongo un resumen para que lo revises antes de guardarlo.\n\nSi quieres preguntarme algo, cambia a «Buscar» (o escribe tu pregunta con «¿»): te contesto directamente, usando solo lo que ya tienes guardado.",
 };
 const looksLikeQuestion = (t) => /^\s*¿/.test(t) || /\?\s*$/.test(t);
 let seq = 0;
@@ -41,16 +41,16 @@ export default function Chat({ scenarios, notes, onSaved, onSearch, onShowNote, 
     setInput("");
     if (inputRef.current) inputRef.current.style.height = "auto";
     const reply = nextId();
-    push({ id: nextId(), role: "user", text: t, mode }, { id: reply, role: "assistant", kind: "loading", text: mode === "learn" ? "Analizando lo que aprendiste…" : "Buscando en tu árbol…" });
+    push({ id: nextId(), role: "user", text: t, mode }, { id: reply, role: "assistant", kind: "loading", text: mode === "learn" ? "Analizando lo que aprendiste…" : "Repasando tus notas para responderte…" });
     setBusy(true);
     try {
       if (mode === "learn") {
         const draft = await api.draft(t);
         replace(reply, { kind: "draft", draft });
       } else {
-        const results = await api.notes(t);
-        onSearch(results.map((n) => n._id));
-        replace(reply, { kind: "results", results, query: t });
+        const { answer, notes: found } = await api.ask(t);
+        onSearch(found.map((n) => n._id));
+        replace(reply, { kind: "answer", answer, results: found, query: t });
       }
     } catch (err) {
       replace(reply, { kind: "error", text: err.message });
@@ -110,7 +110,7 @@ export default function Chat({ scenarios, notes, onSaved, onSearch, onShowNote, 
                   {m.kind === "error" && <p className="error" role="alert">{m.text}</p>}
                   {m.kind === "draft" && (
                     <>
-                      <p>Esto es lo que entendí. Corrige lo que haga falta y guárdalo en el árbol:</p>
+                      <p>Esto es lo que entendí de tu nota. Revísalo y ajusta lo que haga falta antes de guardarlo:</p>
                       <div className="card">
                         <NoteForm initial={m.draft} scenarios={scenarios} notes={notes} submitLabel="Guardar en la red" busy={m.saving}
                           onSubmit={(f) => save(m, f)} onCancel={() => replace(m.id, { kind: "text", text: "Descartado. No he guardado nada." })} />
@@ -130,16 +130,21 @@ export default function Chat({ scenarios, notes, onSaved, onSearch, onShowNote, 
                   )}
                   {m.kind === "saved" && (
                     <>
-                      <p>Guardado en <strong>{m.note.scenario?.name}</strong>. Tu red ha crecido.</p>
+                      <p>Guardado en <strong>{m.note.scenario?.name}</strong>. Ya forma parte de tu red.</p>
                       <NoteCard note={m.note} color={colorOf(scenarios, m.note.scenario?._id)} onShow={onShowNote} jumpLabel="Ver en la red" />
                     </>
                   )}
-                  {m.kind === "results" && (
-                    m.results.length === 0
-                      ? <p>No tengo nada guardado sobre «{m.query}» todavía. Cuando lo aprendas, cuéntamelo y lo añado a la red.</p>
+                  {m.kind === "answer" && (
+                    m.answer === null
+                      ? <p>Todavía no tengo nada guardado sobre eso. Cuéntame lo que sepas y lo añado a tu red para la próxima vez.</p>
                       : <>
-                          <p>Esto es lo que tienes guardado ({m.results.length} {m.results.length === 1 ? "nota" : "notas"}). Las he iluminado en la red:</p>
-                          {m.results.map((n) => <NoteCard key={n._id} note={n} color={colorOf(scenarios, n.scenario?._id)} onShow={onShowNote} jumpLabel="Ver en la red" />)}
+                          <p className="pre">{m.answer}</p>
+                          {m.results.length > 0 && (
+                            <details className="sources">
+                              <summary>{m.results.length} {m.results.length === 1 ? "nota usada" : "notas usadas"} (iluminadas en la red)</summary>
+                              {m.results.map((n) => <NoteCard key={n._id} note={n} color={colorOf(scenarios, n.scenario?._id)} onShow={onShowNote} jumpLabel="Ver en la red" />)}
+                            </details>
+                          )}
                         </>
                   )}
                 </div>
@@ -161,7 +166,7 @@ export default function Chat({ scenarios, notes, onSaved, onSearch, onShowNote, 
         </div>
         <div className="input-row">
           <textarea ref={inputRef} rows={1} value={input} onChange={onType} aria-label="Mensaje"
-            placeholder={mode === "learn" ? "¿Qué aprendiste hoy?" : "¿Qué quieres consultar de tu árbol?"}
+            placeholder={mode === "learn" ? "¿Qué aprendiste hoy?" : "¿Qué quieres saber? Pregúntame como a un compañero"}
             onKeyDown={(e) => e.key === "Enter" && !e.shiftKey && send(e)} />
           <button className="send" disabled={busy || !input.trim()} aria-label="Enviar">↑</button>
         </div>

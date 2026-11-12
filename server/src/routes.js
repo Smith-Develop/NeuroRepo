@@ -1,7 +1,7 @@
 import { Router } from "express";
 import mongoose from "mongoose";
 import { Note, Scenario } from "./models.js";
-import { classifyNote } from "./ai.js";
+import { classifyNote, answerQuestion } from "./ai.js";
 
 const r = Router();
 const PALETTE_SIZE = 8; // debe coincidir con PALETTE en client/src/Tree.jsx
@@ -83,20 +83,35 @@ function rerank(query, notes) {
   return notes.map((n) => ({ n, h: hits(n) })).sort((a, b) => b.h - a.h || b.n.score - a.n.score).map(({ n }) => n);
 }
 
-// Todas las notas (para dibujar el árbol) o búsqueda en lo guardado: nunca se inventa nada
+// Busca por texto completo entre las notas guardadas y las reordena por relevancia real
+async function searchNotes(query, limit = 30) {
+  const found = await Note.find({ $text: { $search: query } }, { score: { $meta: "textScore" } })
+    .sort({ score: { $meta: "textScore" } }).limit(limit)
+    .populate("scenario", "name").populate("relatedNotes.note", "title").lean();
+  return rerank(query, found);
+}
+
+// Todas las notas (para dibujar la red) o búsqueda en lo guardado: nunca se inventa nada
 r.get("/notes", wrap(async (req, res) => {
   const search = text(req.query.q, 300);
   if (!search) {
-    // shortcut: sin paginar; paginar si el árbol pasa de ~2000 hojas
+    // shortcut: sin paginar; paginar si la red pasa de ~2000 hojas
     return res.json(
       await Note.find().sort({ createdAt: 1 }).limit(2000)
         .populate("scenario", "name").populate("relatedNotes.note", "title").lean(),
     );
   }
-  const found = await Note.find({ $text: { $search: search } }, { score: { $meta: "textScore" } })
-    .sort({ score: { $meta: "textScore" } }).limit(30)
-    .populate("scenario", "name").populate("relatedNotes.note", "title").lean();
-  res.json(rerank(search, found).slice(0, 10));
+  res.json((await searchNotes(search)).slice(0, 10));
+}));
+
+// Pregunta en lenguaje natural: busca por texto y la IA redacta una respuesta con solo esas notas
+r.post("/ask", wrap(async (req, res) => {
+  const question = text(req.body?.question, 500);
+  if (!question) return res.status(400).json({ error: "Escribe tu pregunta." });
+  const notes = (await searchNotes(question)).slice(0, 6);
+  if (!notes.length) return res.json({ answer: null, notes: [] });
+  const answer = await answerQuestion(question, notes);
+  res.json({ answer, notes });
 }));
 
 // Paso 1: la IA propone un borrador. No se guarda nada.
