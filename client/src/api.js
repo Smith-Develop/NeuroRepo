@@ -6,7 +6,11 @@ async function req(path, opts = {}) {
   });
   if (res.status === 204) return null;
   const data = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+  if (!res.ok) {
+    const err = new Error(data.error || `Error ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
   return data;
 }
 
@@ -18,4 +22,16 @@ export const api = {
   createNote: (body) => req("/notes", { method: "POST", body }),
   updateNote: (id, body) => req(`/notes/${id}`, { method: "PATCH", body }),
   deleteNote: (id) => req(`/notes/${id}`, { method: "DELETE" }),
+
+  login: (username, password) => req("/login", { method: "POST", body: { username, password } }),
+  logout: () => req("/logout", { method: "POST" }),
+  me: () => req("/me"),
+
+  createSuggestion: (body) => req("/suggestions", { method: "POST", body }),
+  suggestions: () => req("/suggestions"),
+  resolveSuggestion: (id, body) => req(`/suggestions/${id}`, { method: "PATCH", body }),
+
+  createUser: (body) => req("/users", { method: "POST", body }),
+  users: () => req("/users"),
+  deleteUser: (id) => req(`/users/${id}`, { method: "DELETE" }),
 };

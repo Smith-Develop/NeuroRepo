@@ -36,5 +36,35 @@ noteSchema.index(
   { weights: { title: 5, tags: 4, keyPoints: 3, summary: 2, raw: 1 }, default_language: "spanish" },
 );
 
+const userSchema = new mongoose.Schema(
+  {
+    username: { type: String, required: true, unique: true, trim: true, lowercase: true },
+    passwordHash: { type: String, required: true },
+    role: { type: String, enum: ["admin", "user"], default: "user" },
+  },
+  { timestamps: true },
+);
+
+const sessionSchema = new mongoose.Schema({
+  _id: { type: String }, // el propio token, usado como id
+  user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  expiresAt: { type: Date, required: true },
+});
+sessionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // Mongo borra solas las caducadas
+
+const suggestionSchema = new mongoose.Schema(
+  {
+    text: { type: String, required: true, trim: true },
+    kind: { type: String, enum: ["nota", "cambio"], default: "nota" },
+    note: { type: mongoose.Schema.Types.ObjectId, ref: "Note" }, // si es un aviso de cambio sobre una nota existente
+    author: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+    status: { type: String, enum: ["pendiente", "resuelta", "descartada"], default: "pendiente" },
+  },
+  { timestamps: true },
+);
+
 export const Scenario = mongoose.model("Scenario", scenarioSchema);
 export const Note = mongoose.model("Note", noteSchema);
+export const User = mongoose.model("User", userSchema);
+export const Session = mongoose.model("Session", sessionSchema);
+export const Suggestion = mongoose.model("Suggestion", suggestionSchema);

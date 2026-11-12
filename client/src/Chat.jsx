@@ -5,16 +5,21 @@ import NoteCard from "./NoteCard";
 import Builder from "./Builder";
 import { colorOf } from "./Network";
 
-const WELCOME = {
+const WELCOME_ADMIN = {
   id: "welcome", role: "assistant", kind: "text",
   text: "Hola, soy tu asistente de conocimiento. Cuéntame qué aprendiste hoy, tal como se lo explicarías a un compañero, y te propongo un resumen para que lo revises antes de guardarlo.\n\nSi quieres preguntarme algo, cambia a «Buscar» (o escribe tu pregunta con «¿»): te contesto directamente, usando solo lo que ya tienes guardado.",
+};
+const WELCOME_USER = {
+  id: "welcome", role: "assistant", kind: "text",
+  text: "Hola, soy el asistente de conocimiento. Pregúntame lo que necesites (modo «Buscar», o escribe tu pregunta con «¿») y te contesto con lo que ya está guardado.\n\nSi aprendiste algo nuevo, cuéntamelo en «Aprendí algo»: se lo paso al administrador para que lo revise y lo añada.",
 };
 const looksLikeQuestion = (t) => /^\s*¿/.test(t) || /\?\s*$/.test(t);
 let seq = 0;
 const nextId = () => `m${++seq}`;
 
-export default function Chat({ scenarios, notes, onSaved, onSearch, onShowNote, onToggle }) {
-  const [messages, setMessages] = useState([WELCOME]);
+export default function Chat({ user, scenarios, notes, onSaved, onSearch, onShowNote }) {
+  const isAdmin = user.role === "admin";
+  const [messages, setMessages] = useState([isAdmin ? WELCOME_ADMIN : WELCOME_USER]);
   const [input, setInput] = useState("");
   const [mode, setMode] = useState("learn");
   const [busy, setBusy] = useState(false);
@@ -41,12 +46,18 @@ export default function Chat({ scenarios, notes, onSaved, onSearch, onShowNote, 
     setInput("");
     if (inputRef.current) inputRef.current.style.height = "auto";
     const reply = nextId();
-    push({ id: nextId(), role: "user", text: t, mode }, { id: reply, role: "assistant", kind: "loading", text: mode === "learn" ? "Analizando lo que aprendiste…" : "Repasando tus notas para responderte…" });
+    const loadingText = mode === "learn" ? (isAdmin ? "Analizando lo que aprendiste…" : "Enviándoselo al administrador…") : "Repasando tus notas para responderte…";
+    push({ id: nextId(), role: "user", text: t, mode }, { id: reply, role: "assistant", kind: "loading", text: loadingText });
     setBusy(true);
     try {
       if (mode === "learn") {
-        const draft = await api.draft(t);
-        replace(reply, { kind: "draft", draft });
+        if (isAdmin) {
+          const draft = await api.draft(t);
+          replace(reply, { kind: "draft", draft });
+        } else {
+          await api.createSuggestion({ text: t, kind: "nota" });
+          replace(reply, { kind: "text", text: "Gracias. Se lo he pasado al administrador para que lo revise y lo añada a la red." });
+        }
       } else {
         const { answer, notes: found } = await api.ask(t);
         onSearch(found.map((n) => n._id));
@@ -88,10 +99,6 @@ export default function Chat({ scenarios, notes, onSaved, onSearch, onShowNote, 
 
   return (
     <section className="chat" aria-label="Chat">
-      <header className="chat-head">
-        <span>Chat</span>
-        <button type="button" className="ghost small" onClick={onToggle} aria-label="Ocultar chat">Ocultar ›</button>
-      </header>
       <div className="messages" aria-live="polite">
         {messages.map((m) => (
           <div key={m.id} className={`msg ${m.role}`}>
@@ -136,7 +143,7 @@ export default function Chat({ scenarios, notes, onSaved, onSearch, onShowNote, 
                   )}
                   {m.kind === "answer" && (
                     m.answer === null
-                      ? <p>Todavía no tengo nada guardado sobre eso. Cuéntame lo que sepas y lo añado a tu red para la próxima vez.</p>
+                      ? <p>Todavía no tengo nada guardado sobre eso.{isAdmin ? " Cuéntame lo que sepas y lo añado a tu red para la próxima vez." : " Cuéntaselo al administrador en «Aprendí algo» para que lo añada."}</p>
                       : <>
                           <p className="pre">{m.answer}</p>
                           {m.results.length > 0 && (
@@ -162,7 +169,7 @@ export default function Chat({ scenarios, notes, onSaved, onSearch, onShowNote, 
               {label}
             </button>
           ))}
-          <button type="button" className="build-btn" onClick={openBuilder}>🧱 Construir</button>
+          {isAdmin && <button type="button" className="build-btn" onClick={openBuilder}>🧱 Construir</button>}
         </div>
         <div className="input-row">
           <textarea ref={inputRef} rows={1} value={input} onChange={onType} aria-label="Mensaje"

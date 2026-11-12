@@ -2,6 +2,7 @@ import { Router } from "express";
 import mongoose from "mongoose";
 import { Note, Scenario } from "./models.js";
 import { classifyNote, answerQuestion } from "./ai.js";
+import { requireAdmin } from "./auth.js";
 
 const r = Router();
 const PALETTE_SIZE = 8; // debe coincidir con PALETTE en client/src/Tree.jsx
@@ -62,7 +63,7 @@ r.get("/scenarios", wrap(async (_req, res) => {
   res.json(await Scenario.find().sort({ createdAt: 1 }).lean());
 }));
 
-r.patch("/scenarios/:id", wrap(async (req, res) => {
+r.patch("/scenarios/:id", requireAdmin, wrap(async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).end();
   const update = {};
   if (text(req.body?.name, 80)) update.name = text(req.body.name, 80);
@@ -115,7 +116,7 @@ r.post("/ask", wrap(async (req, res) => {
 }));
 
 // Paso 1: la IA propone un borrador. No se guarda nada.
-r.post("/notes/draft", wrap(async (req, res) => {
+r.post("/notes/draft", requireAdmin, wrap(async (req, res) => {
   const raw = text(req.body?.text);
   if (!raw) return res.status(400).json({ error: "Escribe lo que aprendiste." });
   if (raw.length > 20000) return res.status(400).json({ error: "Máximo 20000 caracteres." });
@@ -124,7 +125,7 @@ r.post("/notes/draft", wrap(async (req, res) => {
 }));
 
 // Paso 2: guardar lo que la persona revisó y corrigió
-r.post("/notes", wrap(async (req, res) => {
+r.post("/notes", requireAdmin, wrap(async (req, res) => {
   const f = noteFields(req.body ?? {});
   const scenario = await scenarioByName(f.scenario, req.body?.scenarioDescription);
   const relatedNotes = await relations(req.body?.relatedNotes, null);
@@ -134,7 +135,7 @@ r.post("/notes", wrap(async (req, res) => {
   res.status(201).json(note);
 }));
 
-r.patch("/notes/:id", wrap(async (req, res) => {
+r.patch("/notes/:id", requireAdmin, wrap(async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).end();
   const note = await Note.findById(req.params.id);
   if (!note) return res.status(404).end();
@@ -150,7 +151,7 @@ r.patch("/notes/:id", wrap(async (req, res) => {
   res.json(note);
 }));
 
-r.delete("/notes/:id", wrap(async (req, res) => {
+r.delete("/notes/:id", requireAdmin, wrap(async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).end();
   const note = await Note.findByIdAndDelete(req.params.id);
   if (note) {
