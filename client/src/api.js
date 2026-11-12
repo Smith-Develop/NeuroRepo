@@ -33,5 +33,12 @@ export const api = {
 
   createUser: (body) => req("/users", { method: "POST", body }),
   users: () => req("/users"),
+  updateUserGroup: (id, group) => req(`/users/${id}`, { method: "PATCH", body: { group } }),
   deleteUser: (id) => req(`/users/${id}`, { method: "DELETE" }),
+
+  groups: () => req("/groups"),
+  createGroup: (body) => req("/groups", { method: "POST", body }),
+  updateGroup: (id, body) => req(`/groups/${id}`, { method: "PATCH", body }),
+  deleteGroup: (id) => req(`/groups/${id}`, { method: "DELETE" }),
+  updateScenario: (id, body) => req(`/scenarios/${id}`, { method: "PATCH", body }),
 };

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import mongoose from "mongoose";
-import { User, Session, Suggestion } from "./models.js";
+import { User, Session, Suggestion, Group } from "./models.js";
 import { hashPassword, verifyPassword, createSession, setSessionCookie, clearSessionCookie, requireAuth, requireAdmin } from "./auth.js";
 
 const r = Router();
@@ -42,7 +42,17 @@ r.post("/users", requireAdmin, wrap(async (req, res) => {
 }));
 
 r.get("/users", requireAdmin, wrap(async (req, res) => {
-  res.json(await User.find({}, "username role createdAt").sort({ createdAt: 1 }).lean());
+  res.json(await User.find({}, "username role group createdAt").sort({ createdAt: 1 }).populate("group", "name").lean());
+}));
+
+r.patch("/users/:id", requireAdmin, wrap(async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).end();
+  const update = {};
+  if (req.body?.group === null) update.group = null;
+  else if (mongoose.isValidObjectId(req.body?.group)) update.group = req.body.group;
+  const user = await User.findOneAndUpdate({ _id: req.params.id, role: "user" }, update, { returnDocument: "after" })
+    .select("username role group").populate("group", "name");
+  user ? res.json(user) : res.status(404).end();
 }));
 
 r.delete("/users/:id", requireAdmin, wrap(async (req, res) => {
@@ -51,6 +61,36 @@ r.delete("/users/:id", requireAdmin, wrap(async (req, res) => {
   if (!user) return res.status(404).end();
   await Session.deleteMany({ user: user._id });
   await user.deleteOne();
+  res.status(204).end();
+}));
+
+// Grupos: limitan qué apps puede consultar un usuario sin grupo = sin acceso a ninguna
+r.post("/groups", requireAdmin, wrap(async (req, res) => {
+  const name = text(req.body?.name, 80);
+  if (!name) return res.status(400).json({ error: "Dale un nombre al grupo." });
+  const apps = Array.isArray(req.body?.apps) ? req.body.apps.filter((id) => mongoose.isValidObjectId(id)) : [];
+  if (await Group.exists({ name })) return res.status(400).json({ error: "Ya existe un grupo con ese nombre." });
+  const group = await Group.create({ name, apps });
+  res.status(201).json(await group.populate("apps", "name"));
+}));
+
+r.get("/groups", requireAdmin, wrap(async (req, res) => {
+  res.json(await Group.find().sort({ createdAt: 1 }).populate("apps", "name").lean());
+}));
+
+r.patch("/groups/:id", requireAdmin, wrap(async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).end();
+  const update = {};
+  if (text(req.body?.name, 80)) update.name = text(req.body.name, 80);
+  if (Array.isArray(req.body?.apps)) update.apps = req.body.apps.filter((id) => mongoose.isValidObjectId(id));
+  const group = await Group.findByIdAndUpdate(req.params.id, update, { returnDocument: "after" }).populate("apps", "name");
+  group ? res.json(group) : res.status(404).end();
+}));
+
+r.delete("/groups/:id", requireAdmin, wrap(async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).end();
+  await Group.deleteOne({ _id: req.params.id });
+  await User.updateMany({ group: req.params.id }, { group: null });
   res.status(204).end();
 }));
 

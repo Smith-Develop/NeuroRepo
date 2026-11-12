@@ -2,7 +2,9 @@ import { Router } from "express";
 import mongoose from "mongoose";
 import { Note, Scenario } from "./models.js";
 import { classifyNote, answerQuestion } from "./ai.js";
-import { requireAdmin } from "./auth.js";
+import { requireAdmin, allowedScenarioIds } from "./auth.js";
+
+const DEFAULT_BLOCKED_MESSAGE = "No tienes permiso para consultar esta aplicación. Pregunta al administrador.";
 
 const r = Router();
 const PALETTE_SIZE = 8; // debe coincidir con PALETTE en client/src/Tree.jsx
@@ -38,9 +40,28 @@ function noteFields(body, { partial = false } = {}) {
   if (!partial || "summary" in body) f.summary = text(body.summary, 2000);
   if (!partial || "keyPoints" in body) f.keyPoints = list(body.keyPoints, 30, 500);
   if (!partial || "tags" in body) f.tags = list(body.tags, 15, 40, (t) => t.toLowerCase());
+  if (!partial || "category" in body) f.category = text(body.category, 80);
   if (!partial || "scenario" in body) f.scenario = text(body.scenario, 80);
   for (const k of ["raw", "title", "scenario"]) if (k in f && !f[k]) throw new BadRequest(`Falta "${k}".`);
   return f;
+}
+
+// Valida el procedimiento (diagrama de flujo): remapea índices al quitar pasos sin texto
+function validateSteps(raw) {
+  if (!Array.isArray(raw)) return [];
+  const VALID_TYPES = new Set(["inicio", "paso", "decision", "fin"]);
+  const kept = [];
+  const oldToNew = new Map();
+  raw.slice(0, 40).forEach((s, i) => {
+    const t = text(s?.text, 300);
+    if (!t) return;
+    oldToNew.set(i, kept.length);
+    kept.push({ type: VALID_TYPES.has(s?.type) ? s.type : "paso", text: t, noTargetRaw: s?.noTarget });
+  });
+  return kept.map(({ noTargetRaw, ...s }) => {
+    if (s.type === "decision" && Number.isInteger(noTargetRaw) && oldToNew.has(noTargetRaw)) s.noTarget = oldToNew.get(noTargetRaw);
+    return s;
+  });
 }
 
 // Busca la rama por nombre (sin distinguir mayúsculas) o la crea
@@ -59,8 +80,11 @@ async function prune(scenarioId) {
   if (scenarioId && !(await Note.exists({ scenario: scenarioId }))) await Scenario.deleteOne({ _id: scenarioId });
 }
 
-r.get("/scenarios", wrap(async (_req, res) => {
-  res.json(await Scenario.find().sort({ createdAt: 1 }).lean());
+r.get("/scenarios", wrap(async (req, res) => {
+  const all = await Scenario.find().sort({ createdAt: 1 }).lean();
+  if (req.user.role === "admin") return res.json(all);
+  const allowed = allowedScenarioIds(req.user);
+  res.json(all.filter((s) => allowed.has(String(s._id))));
 }));
 
 r.patch("/scenarios/:id", requireAdmin, wrap(async (req, res) => {
@@ -68,6 +92,7 @@ r.patch("/scenarios/:id", requireAdmin, wrap(async (req, res) => {
   const update = {};
   if (text(req.body?.name, 80)) update.name = text(req.body.name, 80);
   if (typeof req.body?.description === "string") update.description = text(req.body.description, 300);
+  if (typeof req.body?.blockedMessage === "string") update.blockedMessage = text(req.body.blockedMessage, 300);
   const s = await Scenario.findByIdAndUpdate(req.params.id, update, { returnDocument: "after" });
   s ? res.json(s) : res.status(404).end();
 }));
@@ -78,7 +103,7 @@ const STOP = new Set(["como", "cual", "cuales", "donde", "cuando", "para", "porq
 function rerank(query, notes) {
   const stems = [...new Set(norm(query).split(/[^a-z0-9ñ]+/).filter((w) => w.length >= 4 && !STOP.has(w)).map((w) => w.slice(0, 5)))];
   const hits = (n) => {
-    const hay = norm([n.title, n.summary, n.raw, ...(n.tags ?? []), ...(n.keyPoints ?? [])].join(" "));
+    const hay = norm([n.title, n.summary, n.raw, n.category, ...(n.tags ?? []), ...(n.keyPoints ?? [])].join(" "));
     return stems.filter((s) => hay.includes(s)).length;
   };
   return notes.map((n) => ({ n, h: hits(n) })).sort((a, b) => b.h - a.h || b.n.score - a.n.score).map(({ n }) => n);
@@ -95,22 +120,39 @@ async function searchNotes(query, limit = 30) {
 // Todas las notas (para dibujar la red) o búsqueda en lo guardado: nunca se inventa nada
 r.get("/notes", wrap(async (req, res) => {
   const search = text(req.query.q, 300);
+  const isAdmin = req.user.role === "admin";
   if (!search) {
     // shortcut: sin paginar; paginar si la red pasa de ~2000 hojas
-    return res.json(
-      await Note.find().sort({ createdAt: 1 }).limit(2000)
-        .populate("scenario", "name").populate("relatedNotes.note", "title").lean(),
-    );
+    const all = await Note.find().sort({ createdAt: 1 }).limit(2000)
+      .populate("scenario", "name").populate("relatedNotes.note", "title").lean();
+    if (isAdmin) return res.json(all);
+    const allowed = allowedScenarioIds(req.user);
+    return res.json(all.filter((n) => allowed.has(String(n.scenario?._id))));
   }
-  res.json((await searchNotes(search)).slice(0, 10));
+  let found = await searchNotes(search);
+  if (!isAdmin) {
+    const allowed = allowedScenarioIds(req.user);
+    found = found.filter((n) => allowed.has(String(n.scenario?._id)));
+  }
+  res.json(found.slice(0, 10));
 }));
 
-// Pregunta en lenguaje natural: busca por texto y la IA redacta una respuesta con solo esas notas
+// Pregunta en lenguaje natural: busca por texto y la IA redacta una respuesta con solo esas notas.
+// Si la mejor coincidencia es de una app sin permiso, no se llama a la IA: se devuelve el mensaje de esa app.
 r.post("/ask", wrap(async (req, res) => {
   const question = text(req.body?.question, 500);
   if (!question) return res.status(400).json({ error: "Escribe tu pregunta." });
-  const notes = (await searchNotes(question)).slice(0, 6);
-  if (!notes.length) return res.json({ answer: null, notes: [] });
+  let found = await searchNotes(question);
+  if (!found.length) return res.json({ answer: null, notes: [] });
+  if (req.user.role !== "admin") {
+    const allowed = allowedScenarioIds(req.user);
+    if (!allowed.has(String(found[0].scenario?._id))) {
+      const blocked = await Scenario.findById(found[0].scenario._id, "blockedMessage").lean();
+      return res.json({ answer: blocked?.blockedMessage || DEFAULT_BLOCKED_MESSAGE, notes: [], blocked: true });
+    }
+    found = found.filter((n) => allowed.has(String(n.scenario?._id)));
+  }
+  const notes = found.slice(0, 6);
   const answer = await answerQuestion(question, notes);
   res.json({ answer, notes });
 }));
@@ -129,7 +171,8 @@ r.post("/notes", requireAdmin, wrap(async (req, res) => {
   const f = noteFields(req.body ?? {});
   const scenario = await scenarioByName(f.scenario, req.body?.scenarioDescription);
   const relatedNotes = await relations(req.body?.relatedNotes, null);
-  const note = await Note.create({ ...f, scenario: scenario._id, relatedNotes });
+  const steps = validateSteps(req.body?.steps);
+  const note = await Note.create({ ...f, scenario: scenario._id, relatedNotes, steps });
   await note.populate("scenario", "name");
   await note.populate("relatedNotes.note", "title");
   res.status(201).json(note);
@@ -141,6 +184,7 @@ r.patch("/notes/:id", requireAdmin, wrap(async (req, res) => {
   if (!note) return res.status(404).end();
   const f = noteFields(req.body ?? {}, { partial: true });
   if ("relatedNotes" in (req.body ?? {})) f.relatedNotes = await relations(req.body.relatedNotes, note._id);
+  if ("steps" in (req.body ?? {})) f.steps = validateSteps(req.body.steps);
   const previous = note.scenario;
   if (f.scenario) f.scenario = (await scenarioByName(f.scenario))._id;
   note.set(f);

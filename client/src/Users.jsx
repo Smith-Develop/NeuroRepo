@@ -1,15 +1,16 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
 
-// Gestión de usuarios: solo el admin puede crear o borrar cuentas
+// Gestión de usuarios: solo el admin puede crear o borrar cuentas, y asignarles un grupo de acceso
 export default function Users() {
   const [items, setItems] = useState([]);
+  const [groups, setGroups] = useState([]);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
-  const load = () => api.users().then(setItems).catch((e) => setError(e.message));
+  const load = () => Promise.all([api.users(), api.groups()]).then(([u, g]) => { setItems(u); setGroups(g); }).catch((e) => setError(e.message));
   useEffect(() => { load(); }, []);
 
   async function create(e) {
@@ -20,6 +21,18 @@ export default function Users() {
       await api.createUser({ username: username.trim(), password });
       setUsername("");
       setPassword("");
+      await load();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function changeGroup(u, group) {
+    setBusy(true);
+    try {
+      await api.updateUserGroup(u._id, group || null);
       await load();
     } catch (err) {
       setError(err.message);
@@ -59,6 +72,12 @@ export default function Users() {
           <li key={u._id}>
             <span>{u.username}</span>
             <span className="status-tag">{u.role}</span>
+            {u.role !== "admin" && (
+              <select value={u.group?._id ?? ""} onChange={(e) => changeGroup(u, e.target.value)} disabled={busy}>
+                <option value="">Sin grupo</option>
+                {groups.map((g) => <option key={g._id} value={g._id}>{g.name}</option>)}
+              </select>
+            )}
             {u.role !== "admin" && <button type="button" className="link" onClick={() => remove(u)}>Borrar</button>}
           </li>
         ))}

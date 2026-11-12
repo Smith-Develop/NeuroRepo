@@ -8,6 +8,7 @@ import Login from "./Login";
 import Sidebar from "./Sidebar";
 import Suggestions from "./Suggestions";
 import Users from "./Users";
+import Groups from "./Groups";
 
 export default function App() {
   const [user, setUser] = useState(undefined); // undefined = comprobando sesión, null = sin sesión
@@ -121,6 +122,7 @@ export default function App() {
         )}
         {view === "sugerencias" && user.role === "admin" && <Suggestions scenarios={scenarios} notes={notes} onChanged={load} />}
         {view === "usuarios" && user.role === "admin" && <Users />}
+        {view === "grupos" && user.role === "admin" && <Groups />}
         {error && <p className="error toast" role="alert" onClick={() => setError("")}>{error}</p>}
         {notice && <p className="toast notice" onClick={() => setNotice("")}>{notice}</p>}
       </main>

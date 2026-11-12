@@ -1,4 +1,5 @@
 import { useId, useMemo, useState } from "react";
+import StepsEditor from "./StepsEditor";
 
 // Formulario para revisar/corregir lo que propuso la IA (o editar una nota guardada)
 export default function NoteForm({ initial, scenarios, notes = [], submitLabel, cancelLabel = "Descartar", onSubmit, onCancel, busy }) {
@@ -8,8 +9,10 @@ export default function NoteForm({ initial, scenarios, notes = [], submitLabel, 
     summary: initial.summary ?? "",
     keyPoints: (initial.keyPoints ?? []).join("\n"),
     tags: (initial.tags ?? []).join(", "),
+    category: initial.category ?? "",
     scenario: initial.scenario?.name ?? initial.scenario ?? "",
   });
+  const [steps, setSteps] = useState(initial.steps ?? []);
   const [related, setRelated] = useState(
     (initial.relatedNotes ?? []).map((r) => ({ note: r.note?._id ?? r.note, title: r.note?.title ?? "", reason: r.reason ?? "" })),
   );
@@ -20,6 +23,10 @@ export default function NoteForm({ initial, scenarios, notes = [], submitLabel, 
   const candidates = useMemo(
     () => notes.filter((n) => n._id !== initial._id && !related.some((r) => r.note === n._id)),
     [notes, initial._id, related],
+  );
+  const categories = useMemo(
+    () => [...new Set(notes.filter((n) => n.scenario?.name?.toLowerCase() === f.scenario.trim().toLowerCase() && n.category).map((n) => n.category))],
+    [notes, f.scenario],
   );
   const match = candidates.find((n) => n.title.toLowerCase() === relQuery.trim().toLowerCase());
 
@@ -38,8 +45,10 @@ export default function NoteForm({ initial, scenarios, notes = [], submitLabel, 
       summary: f.summary,
       keyPoints: f.keyPoints.split("\n").map((s) => s.replace(/^[-•*]\s*/, "").trim()).filter(Boolean),
       tags: f.tags.split(",").map((s) => s.trim()).filter(Boolean),
+      category: f.category,
       scenario: f.scenario,
       relatedNotes: related.map((r) => ({ note: r.note, reason: r.reason })),
+      steps,
     });
   }
 
@@ -62,6 +71,13 @@ export default function NoteForm({ initial, scenarios, notes = [], submitLabel, 
       </label>
       <input id={`${id}-r`} list={`${id}-list`} value={f.scenario} onChange={set("scenario")} required maxLength={80} />
       <datalist id={`${id}-list`}>{scenarios.map((s) => <option key={s._id} value={s.name} />)}</datalist>
+
+      <label htmlFor={`${id}-cat`}>Categoría <small>(agrupa casuísticas dentro de la app, opcional)</small></label>
+      <input id={`${id}-cat`} list={`${id}-cat-list`} value={f.category} onChange={set("category")} maxLength={80} placeholder="p. ej. Errores, Usuarios…" />
+      <datalist id={`${id}-cat-list`}>{categories.map((c) => <option key={c} value={c} />)}</datalist>
+
+      <label>Procedimiento <small>(diagrama de flujo, opcional)</small></label>
+      <StepsEditor value={steps} onChange={setSteps} />
 
       <label htmlFor={`${id}-rel`}>Depende de <small>(otras casuísticas, de esta app o de otra)</small></label>
       <div className="rel-add">

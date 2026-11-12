@@ -49,15 +49,24 @@ export function clearSessionCookie(res) {
   res.clearCookie(COOKIE_NAME);
 }
 
-// Middleware no bloqueante: deja req.user (con role) o null si no hay sesión válida
+// Middleware no bloqueante: deja req.user (con role y, si lo tiene, su grupo con las apps permitidas) o null
 export async function attachUser(req, _res, next) {
   const token = parseCookies(req.headers.cookie)[COOKIE_NAME];
   req.user = null;
   if (token) {
-    const session = await Session.findById(token).populate("user", "username role");
+    const session = await Session.findById(token).populate({
+      path: "user",
+      select: "username role group",
+      populate: { path: "group", select: "apps" },
+    });
     if (session && session.expiresAt > new Date()) req.user = session.user;
   }
   next();
+}
+
+// Apps que puede consultar un usuario normal (vacío si no tiene grupo). El admin no usa esto: lo ve todo.
+export function allowedScenarioIds(user) {
+  return new Set((user.group?.apps ?? []).map(String));
 }
 
 export function requireAuth(req, res, next) {

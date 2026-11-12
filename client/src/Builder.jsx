@@ -1,16 +1,19 @@
 import { useEffect, useRef, useState } from "react";
+import StepsEditor from "./StepsEditor";
 
 // Piezas disponibles. title y scenario son obligatorias para poder guardar, pero se
 // construyen igual que las demás: hay que arrastrarlas a la zona de construcción.
 const PIECES = [
   { key: "title", label: "Título", color: "#7aa2ff" },
   { key: "scenario", label: "App", color: "#c084fc" },
+  { key: "category", label: "Categoría", color: "#fb923c" },
   { key: "summary", label: "Resumen", color: "#5eead4" },
   { key: "keyPoints", label: "Puntos clave", color: "#facc15" },
   { key: "tags", label: "Etiquetas", color: "#f472b6" },
   { key: "related", label: "Depende de", color: "#4ade80" },
+  { key: "steps", label: "Procedimiento", color: "#38bdf8" },
 ];
-const EMPTY = { title: "", scenario: "", summary: "", keyPoints: "", tags: "", related: [] };
+const EMPTY = { title: "", scenario: "", category: "", summary: "", keyPoints: "", tags: "", related: [], steps: [] };
 
 function RelatedPicker({ notes, value, onChange }) {
   const [q, setQ] = useState("");
@@ -63,8 +66,10 @@ function PieceBlock({ pieceKey, value, onChange, onRemove, scenarios, notes }) {
       )}
       {pieceKey === "summary" && <textarea rows={2} value={value} onChange={(e) => onChange(e.target.value)} maxLength={2000} placeholder="Resumen breve" />}
       {pieceKey === "keyPoints" && <textarea rows={3} value={value} onChange={(e) => onChange(e.target.value)} placeholder="Uno por línea" />}
+      {pieceKey === "category" && <input value={value} onChange={(e) => onChange(e.target.value)} maxLength={80} placeholder="p. ej. Errores, Usuarios…" />}
       {pieceKey === "tags" && <input value={value} onChange={(e) => onChange(e.target.value)} placeholder="Separadas por comas" />}
       {pieceKey === "related" && <RelatedPicker notes={notes} value={value} onChange={onChange} />}
+      {pieceKey === "steps" && <StepsEditor value={value} onChange={onChange} />}
     </div>
   );
 }
@@ -106,7 +111,7 @@ export default function Builder({ scenarios, notes, busy, onSubmit, onCancel }) 
 
   function removePiece(key) {
     setPlaced((p) => p.filter((k) => k !== key));
-    setValues((s) => ({ ...s, [key]: key === "related" ? [] : "" }));
+    setValues((s) => ({ ...s, [key]: key === "related" || key === "steps" ? [] : "" }));
   }
 
   const canSave = values.title.trim() && values.scenario.trim();
@@ -118,8 +123,10 @@ export default function Builder({ scenarios, notes, busy, onSubmit, onCancel }) 
       summary: values.summary,
       keyPoints,
       tags: values.tags.split(",").map((s) => s.trim()).filter(Boolean),
+      category: values.category,
       scenario: values.scenario,
       relatedNotes: values.related.map((r) => ({ note: r.note, reason: r.reason })),
+      steps: values.steps,
       raw: [values.title, values.summary, ...keyPoints].filter(Boolean).join("\n") || values.title,
     });
   }

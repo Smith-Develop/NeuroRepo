@@ -5,6 +5,7 @@ const ITEMS = [
 const ADMIN_ITEMS = [
   { id: "sugerencias", label: "Sugerencias", icon: "📥" },
   { id: "usuarios", label: "Usuarios", icon: "👥" },
+  { id: "grupos", label: "Grupos", icon: "🔒" },
 ];
 
 export default function Sidebar({ user, view, onNavigate, onLogout, suggestionCount }) {
