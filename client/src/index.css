@@ -1,0 +1,29 @@
+:root { --bg:#f6f7f9; --card:#fff; --text:#1d2330; --muted:#667085; --accent:#3b5bdb; --border:#e3e6eb; font-family: system-ui, sans-serif; color: var(--text); background: var(--bg); }
+@media (prefers-color-scheme: dark) { :root { --bg:#14161b; --card:#1e2128; --text:#e6e8ec; --muted:#9aa3b2; --accent:#7c94ff; --border:#2d313a; } }
+* { box-sizing: border-box; }
+body { margin: 0; }
+.layout { display: grid; grid-template-columns: 260px 1fr; min-height: 100vh; }
+aside { border-right: 1px solid var(--border); padding: 16px; display: flex; flex-direction: column; gap: 4px; }
+aside h1 { font-size: 1.2rem; }
+aside button { display: flex; justify-content: space-between; text-align: left; background: none; color: inherit; border: 0; padding: 8px 10px; border-radius: 6px; cursor: pointer; }
+aside button.active, aside button:hover { background: var(--card); }
+aside span { color: var(--muted); }
+main { padding: 24px; max-width: 860px; display: flex; flex-direction: column; gap: 16px; }
+.card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+.card header { display: flex; justify-content: space-between; gap: 8px; align-items: start; }
+.card h2 { font-size: 1.05rem; margin: 0; }
+label { font-weight: 600; }
+textarea, input, select { font: inherit; color: inherit; background: var(--bg); border: 1px solid var(--border); border-radius: 6px; padding: 8px; width: 100%; }
+select { width: auto; }
+button { font: inherit; padding: 8px 14px; border-radius: 6px; border: 0; background: var(--accent); color: #fff; cursor: pointer; }
+button:disabled { opacity: .5; cursor: default; }
+.row { display: flex; gap: 8px; }
+.tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.tag { background: none; color: var(--accent); padding: 2px 6px; }
+.link { background: none; color: var(--muted); padding: 0; }
+.answer { border-left: 3px solid var(--accent); padding-left: 12px; white-space: pre-wrap; }
+.raw { white-space: pre-wrap; color: var(--muted); }
+.muted, small { color: var(--muted); }
+.error { color: #d92d20; }
+footer { display: flex; justify-content: space-between; }
+@media (max-width: 700px) { .layout { grid-template-columns: 1fr; } aside { border-right: 0; border-bottom: 1px solid var(--border); } main { padding: 16px; } }

@@ -1,0 +1,41 @@
+services:
+  app:
+    build: .
+    depends_on:
+      mongo: { condition: service_started }
+      model: { condition: service_completed_successfully }
+    environment:
+      # Coolify: crea el dominio y enruta al puerto 4000
+      - SERVICE_FQDN_APP_4000
+      - MONGODB_URI=mongodb://mongo:27017/notas-ia
+      - OLLAMA_URL=http://ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:3b}
+      - APP_USER=${APP_USER:-admin}
+      - APP_PASSWORD=${APP_PASSWORD:?Define APP_PASSWORD}
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7
+    volumes: [mongo-data:/data/db]
+    restart: unless-stopped
+
+  # IA local. Sin puertos publicados: solo la app puede usarla.
+  ollama:
+    image: ollama/ollama:latest
+    volumes: [ollama-data:/root/.ollama]
+    environment:
+      - OLLAMA_KEEP_ALIVE=24h # mantiene el modelo cargado en RAM
+    restart: unless-stopped
+
+  # Descarga el modelo la primera vez (~2 GB) y termina
+  model:
+    image: ollama/ollama:latest
+    depends_on: [ollama]
+    environment: [OLLAMA_HOST=ollama:11434]
+    entrypoint: ["ollama", "pull", "${OLLAMA_MODEL:-qwen2.5:3b}"]
+    restart: "no"
+    exclude_from_hc: true
+
+volumes:
+  mongo-data:
+  ollama-data:
