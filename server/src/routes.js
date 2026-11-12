@@ -1,91 +1,120 @@
 import { Router } from "express";
 import mongoose from "mongoose";
 import { Note, Scenario } from "./models.js";
-import { classifyNote, answerQuestion } from "./ai.js";
+import { classifyNote } from "./ai.js";
 
 const r = Router();
-const MAX_LEN = 20000;
+const PALETTE_SIZE = 8; // debe coincidir con PALETTE en client/src/Tree.jsx
 const wrap = (fn) => (req, res, next) => fn(req, res).catch(next);
-const text = (v) => (typeof v === "string" ? v.trim() : "");
+const text = (v, max = Infinity) => (typeof v === "string" ? v.trim().slice(0, max) : "");
+const list = (v, maxItems, maxLen, fn = (x) => x) =>
+  Array.isArray(v) ? [...new Set(v.map((x) => fn(text(x, maxLen))).filter(Boolean))].slice(0, maxItems) : [];
+
+class BadRequest extends Error {}
+
+// Valida lo que llega del formulario de revisión (la persona ya ha corregido lo que propuso la IA)
+function noteFields(body, { partial = false } = {}) {
+  const f = {};
+  if (!partial || "raw" in body) f.raw = text(body.raw, 20000);
+  if (!partial || "title" in body) f.title = text(body.title, 200);
+  if (!partial || "summary" in body) f.summary = text(body.summary, 2000);
+  if (!partial || "keyPoints" in body) f.keyPoints = list(body.keyPoints, 30, 500);
+  if (!partial || "tags" in body) f.tags = list(body.tags, 15, 40, (t) => t.toLowerCase());
+  if (!partial || "scenario" in body) f.scenario = text(body.scenario, 80);
+  for (const k of ["raw", "title", "scenario"]) if (k in f && !f[k]) throw new BadRequest(`Falta "${k}".`);
+  return f;
+}
+
+// Busca la rama por nombre (sin distinguir mayúsculas) o la crea
+async function scenarioByName(name, description = "") {
+  const re = new RegExp(`^${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}$`, "i");
+  const found = await Scenario.findOne({ name: re });
+  if (found) return found;
+  // Cada rama nueva toma un color de la paleta que no esté en uso
+  const used = new Set(await Scenario.distinct("color"));
+  const color = [...Array(PALETTE_SIZE).keys()].find((i) => !used.has(i)) ?? (await Scenario.countDocuments()) % PALETTE_SIZE;
+  return Scenario.create({ name, description: text(description, 300), color });
+}
+
+// Las ramas sin hojas se podan
+async function prune(scenarioId) {
+  if (scenarioId && !(await Note.exists({ scenario: scenarioId }))) await Scenario.deleteOne({ _id: scenarioId });
+}
 
 r.get("/scenarios", wrap(async (_req, res) => {
-  const counts = await Note.aggregate([{ $group: { _id: "$scenario", n: { $sum: 1 } } }]);
-  const byId = Object.fromEntries(counts.map((c) => [String(c._id), c.n]));
-  const scenarios = await Scenario.find().sort({ name: 1 }).lean();
-  res.json(scenarios.map((s) => ({ ...s, noteCount: byId[String(s._id)] || 0 })));
-}));
-
-r.get("/notes", wrap(async (req, res) => {
-  const q = {};
-  if (mongoose.isValidObjectId(req.query.scenario)) q.scenario = req.query.scenario;
-  if (text(req.query.tag)) q.tags = text(req.query.tag);
-  const search = text(req.query.q);
-  const query = search ? Note.find({ ...q, $text: { $search: search } }, { score: { $meta: "textScore" } }).sort({ score: { $meta: "textScore" } })
-                       : Note.find(q).sort({ createdAt: -1 });
-  res.json(await query.limit(200).populate("scenario", "name").lean());
-}));
-
-// Crear nota: la IA decide escenario, título, resumen, etiquetas
-r.post("/notes", wrap(async (req, res) => {
-  const raw = text(req.body?.text);
-  if (!raw) return res.status(400).json({ error: "La nota está vacía." });
-  if (raw.length > MAX_LEN) return res.status(400).json({ error: `Máximo ${MAX_LEN} caracteres.` });
-
-  const scenarios = await Scenario.find().lean();
-  const c = await classifyNote(raw, scenarios);
-
-  // Empareja el escenario por nombre (sin distinguir mayúsculas) o lo crea
-  const wanted = text(c.scenario) || "General";
-  let scenario = scenarios.find((s) => s.name.toLowerCase() === wanted.toLowerCase());
-  if (!scenario) {
-    scenario = await Scenario.findOneAndUpdate(
-      { name: wanted },
-      { $setOnInsert: { name: wanted, description: text(c.scenarioDescription) } },
-      { upsert: true, returnDocument: "after" },
-    );
-  }
-  const note = await Note.create({
-    raw, title: c.title, summary: c.summary, keyPoints: c.keyPoints,
-    tags: [...new Set(c.tags.map((t) => t.toLowerCase().replaceAll("_", " ").trim()).filter(Boolean))],
-    scenario: scenario._id,
-  });
-  res.status(201).json(await note.populate("scenario", "name"));
-}));
-
-// Corrección manual: mover de escenario o editar
-r.patch("/notes/:id", wrap(async (req, res) => {
-  if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).end();
-  const update = {};
-  for (const k of ["title", "summary"]) if (text(req.body?.[k])) update[k] = text(req.body[k]);
-  if (mongoose.isValidObjectId(req.body?.scenario)) update.scenario = req.body.scenario;
-  const note = await Note.findByIdAndUpdate(req.params.id, update, { returnDocument: "after" }).populate("scenario", "name");
-  note ? res.json(note) : res.status(404).end();
-}));
-
-r.delete("/notes/:id", wrap(async (req, res) => {
-  if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).end();
-  await Note.findByIdAndDelete(req.params.id);
-  res.status(204).end();
+  res.json(await Scenario.find().sort({ createdAt: 1 }).lean());
 }));
 
 r.patch("/scenarios/:id", wrap(async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).end();
   const update = {};
-  if (text(req.body?.name)) update.name = text(req.body.name);
-  if (typeof req.body?.description === "string") update.description = req.body.description.trim();
+  if (text(req.body?.name, 80)) update.name = text(req.body.name, 80);
+  if (typeof req.body?.description === "string") update.description = text(req.body.description, 300);
   const s = await Scenario.findByIdAndUpdate(req.params.id, update, { returnDocument: "after" });
   s ? res.json(s) : res.status(404).end();
 }));
 
-// Preguntar en lenguaje natural sobre lo aprendido
-r.post("/ask", wrap(async (req, res) => {
-  const question = text(req.body?.question);
-  if (!question) return res.status(400).json({ error: "Escribe una pregunta." });
-  let notes = await Note.find({ $text: { $search: question } }, { score: { $meta: "textScore" } })
-    .sort({ score: { $meta: "textScore" } }).limit(6).populate("scenario", "name").lean();
-  if (!notes.length) notes = await Note.find().sort({ createdAt: -1 }).limit(6).populate("scenario", "name").lean();
-  const answer = await answerQuestion(question, notes);
-  res.json({ answer, sources: notes.map(({ _id, title, scenario }) => ({ _id, title, scenario })) });
+// Reordena por cuántas palabras distintas de la pregunta aparecen en la nota (raíz de 5 letras, sin tildes)
+const norm = (s) => s.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+const STOP = new Set(["como", "cual", "cuales", "donde", "cuando", "para", "porque", "que", "hago", "hacer", "tengo", "esta", "este", "esto", "sobre", "with"]);
+function rerank(query, notes) {
+  const stems = [...new Set(norm(query).split(/[^a-z0-9ñ]+/).filter((w) => w.length >= 4 && !STOP.has(w)).map((w) => w.slice(0, 5)))];
+  const hits = (n) => {
+    const hay = norm([n.title, n.summary, n.raw, ...(n.tags ?? []), ...(n.keyPoints ?? [])].join(" "));
+    return stems.filter((s) => hay.includes(s)).length;
+  };
+  return notes.map((n) => ({ n, h: hits(n) })).sort((a, b) => b.h - a.h || b.n.score - a.n.score).map(({ n }) => n);
+}
+
+// Todas las notas (para dibujar el árbol) o búsqueda en lo guardado: nunca se inventa nada
+r.get("/notes", wrap(async (req, res) => {
+  const search = text(req.query.q, 300);
+  if (!search) {
+    // shortcut: sin paginar; paginar si el árbol pasa de ~2000 hojas
+    return res.json(await Note.find().sort({ createdAt: 1 }).limit(2000).populate("scenario", "name").lean());
+  }
+  const found = await Note.find({ $text: { $search: search } }, { score: { $meta: "textScore" } })
+    .sort({ score: { $meta: "textScore" } }).limit(30).populate("scenario", "name").lean();
+  res.json(rerank(search, found).slice(0, 10));
 }));
+
+// Paso 1: la IA propone un borrador. No se guarda nada.
+r.post("/notes/draft", wrap(async (req, res) => {
+  const raw = text(req.body?.text);
+  if (!raw) return res.status(400).json({ error: "Escribe lo que aprendiste." });
+  if (raw.length > 20000) return res.status(400).json({ error: "Máximo 20000 caracteres." });
+  const scenarios = await Scenario.find().lean();
+  res.json({ raw, ...(await classifyNote(raw, scenarios)) });
+}));
+
+// Paso 2: guardar lo que la persona revisó y corrigió
+r.post("/notes", wrap(async (req, res) => {
+  const f = noteFields(req.body ?? {});
+  const scenario = await scenarioByName(f.scenario, req.body?.scenarioDescription);
+  const note = await Note.create({ ...f, scenario: scenario._id });
+  res.status(201).json(await note.populate("scenario", "name"));
+}));
+
+r.patch("/notes/:id", wrap(async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).end();
+  const note = await Note.findById(req.params.id);
+  if (!note) return res.status(404).end();
+  const f = noteFields(req.body ?? {}, { partial: true });
+  const previous = note.scenario;
+  if (f.scenario) f.scenario = (await scenarioByName(f.scenario))._id;
+  note.set(f);
+  await note.save();
+  if (String(previous) !== String(note.scenario)) await prune(previous);
+  res.json(await note.populate("scenario", "name"));
+}));
+
+r.delete("/notes/:id", wrap(async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).end();
+  const note = await Note.findByIdAndDelete(req.params.id);
+  if (note) await prune(note.scenario);
+  res.status(204).end();
+}));
+
+r.use((err, _req, res, next) => (err instanceof BadRequest ? res.status(400).json({ error: err.message }) : next(err)));
 
 export default r;

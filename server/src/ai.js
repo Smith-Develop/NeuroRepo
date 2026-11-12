@@ -95,21 +95,6 @@ export async function classifyNote(text, scenarios) {
     throw new AIError("La IA devolvió un análisis inválido; vuelve a intentarlo.");
   }
   const existing = scenarios.length ? await chooseScenario(text, a, scenarios) : null;
-  return { ...a, scenario: existing ?? a.area, scenarioDescription: a.areaDescription };
-}
-
-const MAX_NOTE_CHARS = 1500; // shortcut: recorta notas largas para caber en el contexto de un modelo pequeño
-
-export async function answerQuestion(question, notes) {
-  const context = notes
-    .map((n, i) => `[${i + 1}] ${n.title} (escenario: ${n.scenario?.name ?? "?"})\n${n.raw.slice(0, MAX_NOTE_CHARS)}`)
-    .join("\n\n---\n\n");
-  return chat([
-    {
-      role: "system",
-      content:
-        "Respondes preguntas usando SOLO las notas de trabajo que te dan. Cita las notas con [n]. Si las notas no contienen la respuesta, di que no lo encuentras en tus notas. Sé breve y responde en el idioma de la pregunta.",
-    },
-    { role: "user", content: `Notas:\n${context || "(ninguna)"}\n\nPregunta: ${question}` },
-  ]);
+  const { area, areaDescription, ...rest } = a;
+  return { ...rest, scenario: existing ?? area, scenarioDescription: areaDescription, isNewScenario: !existing };
 }

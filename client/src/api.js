@@ -12,9 +12,9 @@ async function req(path, opts = {}) {
 
 export const api = {
   scenarios: () => req("/scenarios"),
-  notes: (params = {}) => req(`/notes?${new URLSearchParams(Object.entries(params).filter(([, v]) => v))}`),
-  addNote: (text) => req("/notes", { method: "POST", body: { text } }),
+  notes: (q) => req(`/notes${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+  draft: (text) => req("/notes/draft", { method: "POST", body: { text } }),
+  createNote: (body) => req("/notes", { method: "POST", body }),
   updateNote: (id, body) => req(`/notes/${id}`, { method: "PATCH", body }),
   deleteNote: (id) => req(`/notes/${id}`, { method: "DELETE" }),
-  ask: (question) => req("/ask", { method: "POST", body: { question } }),
 };

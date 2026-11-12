@@ -1,107 +1,102 @@
 import { useCallback, useEffect, useState } from "react";
 import { api } from "./api";
+import Tree, { colorOf } from "./Tree";
+import Chat from "./Chat";
+import NoteForm from "./NoteForm";
+import NoteCard from "./NoteCard";
 
 export default function App() {
   const [scenarios, setScenarios] = useState([]);
   const [notes, setNotes] = useState([]);
-  const [filter, setFilter] = useState({ scenario: "", tag: "", q: "" });
-  const [draft, setDraft] = useState("");
-  const [busy, setBusy] = useState(false);
+  const [highlight, setHighlight] = useState(null);
+  const [selected, setSelected] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [freshId, setFreshId] = useState(null);
   const [error, setError] = useState("");
-  const [question, setQuestion] = useState("");
-  const [answer, setAnswer] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [view, setView] = useState("chat"); // solo en móvil
 
   const load = useCallback(async () => {
     try {
-      const [s, n] = await Promise.all([api.scenarios(), api.notes(filter)]);
+      const [s, n] = await Promise.all([api.scenarios(), api.notes()]);
       setScenarios(s);
       setNotes(n);
     } catch (e) { setError(e.message); }
-  }, [filter]);
-
+  }, []);
   useEffect(() => { load(); }, [load]);
 
-  async function run(fn) {
-    setBusy(true); setError("");
-    try { await fn(); } catch (e) { setError(e.message); } finally { setBusy(false); }
+  function onSaved(note) {
+    setHighlight(null);
+    setFreshId(note._id);
+    load();
+  }
+  function showNote(note) {
+    setSelected(note);
+    setEditing(false);
+    setHighlight(new Set([note._id]));
+    setView("tree");
+  }
+  function close() {
+    setSelected(null);
+    setEditing(false);
   }
 
-  const save = (e) => { e.preventDefault(); if (!draft.trim()) return;
-    run(async () => { await api.addNote(draft); setDraft(""); await load(); }); };
-
-  const ask = (e) => { e.preventDefault(); if (!question.trim()) return;
-    run(async () => setAnswer(await api.ask(question))); };
-
-  const move = (id, scenario) => run(async () => { await api.updateNote(id, { scenario }); await load(); });
-  const remove = (id) => confirm("¿Borrar esta nota?") && run(async () => { await api.deleteNote(id); await load(); });
+  async function update(fields) {
+    setBusy(true);
+    try {
+      const n = await api.updateNote(selected._id, fields);
+      setSelected(n);
+      setEditing(false);
+      await load();
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  }
+  async function remove() {
+    if (!confirm("¿Borrar esta nota del árbol?")) return;
+    setBusy(true);
+    try {
+      await api.deleteNote(selected._id);
+      close();
+      await load();
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  }
 
   return (
-    <div className="layout">
-      <aside>
-        <h1>Mi conocimiento</h1>
-        <button className={!filter.scenario ? "active" : ""} onClick={() => setFilter({ scenario: "", tag: "", q: "" })}>
-          Todas <span>{scenarios.reduce((a, s) => a + s.noteCount, 0)}</span>
-        </button>
-        {scenarios.map((s) => (
-          <button key={s._id} title={s.description} className={filter.scenario === s._id ? "active" : ""}
-            onClick={() => setFilter({ scenario: s._id, tag: "", q: "" })}>
-            {s.name} <span>{s.noteCount}</span>
-          </button>
-        ))}
-      </aside>
+    <div className={`app view-${view}`}>
+      <nav className="mobile-tabs" aria-label="Vista">
+        <button className={view === "tree" ? "on" : ""} onClick={() => setView("tree")}>Árbol</button>
+        <button className={view === "chat" ? "on" : ""} onClick={() => setView("chat")}>Chat</button>
+      </nav>
 
-      <main>
-        <form onSubmit={save} className="card">
-          <label htmlFor="draft">¿Qué aprendiste hoy?</label>
-          <textarea id="draft" rows={4} value={draft} onChange={(e) => setDraft(e.target.value)}
-            placeholder="Escríbelo como te salga. Ej: hoy descubrí que para reiniciar el servicio de facturación hay que…" />
-          <button disabled={busy || !draft.trim()}>{busy ? "Organizando…" : "Guardar y organizar"}</button>
-        </form>
+      <main className="tree-pane">
+        <header className="tree-head">
+          <h1>Árbol de conocimiento</h1>
+          <p>{scenarios.length} ramas · {notes.length} hojas</p>
+          {highlight && <button className="ghost small" onClick={() => setHighlight(null)}>Quitar resaltado</button>}
+        </header>
+        <Tree scenarios={scenarios} notes={notes} highlight={highlight} selectedId={selected?._id} freshId={freshId} onSelect={showNote} />
+        {error && <p className="error toast" role="alert" onClick={() => setError("")}>{error}</p>}
 
-        <form onSubmit={ask} className="card">
-          <label htmlFor="q">Pregúntale a tus notas</label>
-          <div className="row">
-            <input id="q" value={question} onChange={(e) => setQuestion(e.target.value)} placeholder="¿Cómo se reiniciaba el servicio de facturación?" />
-            <button disabled={busy || !question.trim()}>Preguntar</button>
-          </div>
-          {answer && (
-            <div className="answer">
-              <p>{answer.answer}</p>
-              <small>Fuentes: {answer.sources.map((s, i) => `[${i + 1}] ${s.title}`).join(" · ")}</small>
-            </div>
-          )}
-        </form>
-
-        {error && <p role="alert" className="error">{error}</p>}
-
-        <div className="row">
-          <input aria-label="Buscar" placeholder="Buscar en notas…" value={filter.q}
-            onChange={(e) => setFilter({ ...filter, q: e.target.value })} />
-          {filter.tag && <button onClick={() => setFilter({ ...filter, tag: "" })}>#{filter.tag} ✕</button>}
-        </div>
-
-        {notes.length === 0 && <p className="muted">No hay notas aquí todavía.</p>}
-        {notes.map((n) => (
-          <article key={n._id} className="card">
-            <header>
-              <h2>{n.title}</h2>
-              <select aria-label="Escenario" value={n.scenario?._id} onChange={(e) => move(n._id, e.target.value)}>
-                {scenarios.map((s) => <option key={s._id} value={s._id}>{s.name}</option>)}
-              </select>
-            </header>
-            <p>{n.summary}</p>
-            {n.keyPoints?.length > 0 && <ul>{n.keyPoints.map((k, i) => <li key={i}>{k}</li>)}</ul>}
-            <div className="tags">
-              {n.tags.map((t) => <button key={t} className="tag" onClick={() => setFilter({ ...filter, tag: t })}>#{t}</button>)}
-            </div>
-            <details><summary>Nota original</summary><p className="raw">{n.raw}</p></details>
-            <footer>
-              <small>{new Date(n.createdAt).toLocaleString()}</small>
-              <button className="link" onClick={() => remove(n._id)}>Borrar</button>
-            </footer>
-          </article>
-        ))}
+        {selected && (
+          <aside className="drawer" aria-label="Nota seleccionada">
+            <button className="close" onClick={close} aria-label="Cerrar">×</button>
+            {editing ? (
+              <NoteForm key={selected._id} initial={selected} scenarios={scenarios} submitLabel="Guardar cambios" cancelLabel="Cancelar" busy={busy}
+                onSubmit={update} onCancel={() => setEditing(false)} />
+            ) : (
+              <>
+                <NoteCard note={selected} color={colorOf(scenarios, selected.scenario?._id)} />
+                <div className="actions">
+                  <button className="ghost" onClick={remove} disabled={busy}>Borrar</button>
+                  <button onClick={() => setEditing(true)}>Editar</button>
+                </div>
+              </>
+            )}
+          </aside>
+        )}
       </main>
+
+      <Chat scenarios={scenarios} onSaved={onSaved} onShowNote={showNote}
+        onSearch={(ids) => setHighlight(ids.length ? new Set(ids) : null)} />
     </div>
   );
 }

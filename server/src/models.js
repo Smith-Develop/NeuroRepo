@@ -4,6 +4,7 @@ const scenarioSchema = new mongoose.Schema(
   {
     name: { type: String, required: true, unique: true, trim: true },
     description: { type: String, default: "" },
+    color: { type: Number, default: 0 }, // índice de la paleta del árbol
   },
   { timestamps: true },
 );
