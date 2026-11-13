@@ -76,14 +76,19 @@ small { color: var(--muted); font-weight: 400; }
 .tree-pane {
   flex: 1; min-height: 0; position: relative; overflow: hidden; display: flex; flex-direction: column;
   background:
-    radial-gradient(ellipse at 50% 40%, rgba(90, 110, 255, .14), transparent 60%),
-    radial-gradient(ellipse at 20% 80%, rgba(180, 120, 255, .08), transparent 50%),
-    radial-gradient(1px 1px at 20% 30%, #fff8, transparent), radial-gradient(1px 1px at 70% 15%, #fff6, transparent),
-    radial-gradient(1px 1px at 85% 60%, #fff5, transparent), radial-gradient(1px 1px at 35% 70%, #fff4, transparent),
-    var(--bg);
+    radial-gradient(ellipse at 50% 35%, rgba(0, 229, 255, .10), transparent 55%),
+    radial-gradient(ellipse at 15% 85%, rgba(255, 43, 214, .07), transparent 50%),
+    radial-gradient(1px 1px at 20% 30%, #9ff8, transparent), radial-gradient(1px 1px at 70% 15%, #f9f6, transparent),
+    radial-gradient(1px 1px at 85% 60%, #9ff5, transparent), radial-gradient(1px 1px at 35% 70%, #f9f4, transparent),
+    #040509;
+}
+.tree-pane::after {
+  content: ""; position: absolute; inset: 0; pointer-events: none; z-index: 1;
+  background: repeating-linear-gradient(to bottom, rgba(0, 229, 255, .025) 0 1px, transparent 1px 3px);
+  mix-blend-mode: screen;
 }
 .tree-head { position: absolute; top: 16px; left: 20px; z-index: 1; display: flex; gap: 12px; align-items: baseline; flex-wrap: wrap; }
-.tree-head h1 { font-size: 1rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; margin: 0; }
+.tree-head h1 { font-size: 1rem; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; margin: 0; color: #d6fbff; text-shadow: 0 0 10px #00e5ff88; }
 .tree-head p { margin: 0; color: var(--muted); font-size: .85rem; }
 .network-wrap { flex: 1; min-height: 0; margin-top: 56px; position: relative; display: flex; }
 .tree { flex: 1; width: 100%; height: 100%; min-height: 0; touch-action: none; }
@@ -95,14 +100,24 @@ small { color: var(--muted); font-weight: 400; }
   border: 1px solid var(--line); font-size: 1.15rem; line-height: 1; display: flex; align-items: center; justify-content: center;
 }
 
-.dendrite { stroke: var(--c); stroke-width: 1.1; opacity: .5; transition: opacity .4s; }
-.synapse { stroke: #fbbf24; stroke-width: 1.3; stroke-dasharray: 3 4; opacity: .55; transition: opacity .4s; }
-.dendrite.dimmed, .synapse.dimmed { opacity: .06; }
-.hub.dimmed .hub-label { opacity: .3; }
-.hub-core { fill: var(--c); }
-.hub-halo { fill: var(--c); opacity: .3; animation: hub-pulse 3.4s ease-in-out infinite; }
-@keyframes hub-pulse { 0%, 100% { opacity: .2; } 50% { opacity: .4; } }
-.hub-label { fill: var(--c); font-size: 12px; letter-spacing: .14em; font-weight: 600; paint-order: stroke; stroke: var(--bg); stroke-width: 4px; text-transform: uppercase; }
+/* ---------- Mapa radial cyberpunk ---------- */
+.cp-grid { opacity: .5; }
+.branch { fill: none; stroke: var(--c); opacity: .65; filter: drop-shadow(0 0 2px var(--c)); transition: opacity .4s; }
+.branch.dimmed { opacity: .05; }
+.synapse { fill: none; stroke: #fff86a; stroke-width: 1.4; stroke-dasharray: 2 5; opacity: .6; filter: drop-shadow(0 0 3px #fff86a); transition: opacity .4s; }
+.synapse.dimmed { opacity: .04; }
+
+.cp-root-core { fill: #e8fbff; }
+.cp-root-halo { fill: #00e5ff; opacity: .45; animation: cp-pulse 3s ease-in-out infinite; }
+.cp-node.dimmed .cp-label { opacity: .25; }
+.cp-core { fill: var(--c); }
+.cp-halo { fill: var(--c); opacity: .35; animation: cp-pulse 3.4s ease-in-out infinite; }
+@keyframes cp-pulse { 0%, 100% { opacity: .22; } 50% { opacity: .45; } }
+.cp-label {
+  fill: var(--c); font-size: 11px; letter-spacing: .08em; font-weight: 600; paint-order: stroke;
+  stroke: #040509; stroke-width: 4px; font-family: ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace;
+}
+.cp-depth-1 .cp-label { font-size: 13px; letter-spacing: .12em; text-transform: uppercase; }
 .empty-label { fill: var(--muted); font-size: 18px; }
 
 .leaf { cursor: pointer; transition: transform .6s ease, opacity .4s; opacity: 0; animation: appear .5s ease-out .15s forwards; outline: none; }
@@ -110,8 +125,8 @@ small { color: var(--muted); font-weight: 400; }
 .leaf.dimmed { animation: none; opacity: .15; }
 .leaf .dot { fill: var(--c); }
 .leaf .halo { fill: var(--c); opacity: 0; transition: opacity .2s; }
-.leaf text { fill: #cfd6e6; transition: fill .2s; }
-.leaf:hover .halo, .leaf:focus-visible .halo, .leaf.selected .halo { opacity: .3; }
+.leaf text { fill: #cfe8ff; font-family: ui-monospace, "Cascadia Code", "SF Mono", Consolas, monospace; font-size: 11px; transition: fill .2s; }
+.leaf:hover .halo, .leaf:focus-visible .halo, .leaf.selected .halo { opacity: .4; }
 .leaf:hover text, .leaf:focus-visible text, .leaf.selected text, .leaf.hit text { fill: #fff; }
 .leaf.hit .dot, .leaf.selected .dot { r: 5.5; }
 .leaf.hit .halo { animation: pulse 1.6s ease-in-out infinite; }
@@ -279,6 +294,6 @@ details summary { cursor: pointer; color: var(--muted); font-size: .85rem; }
   .tree-head { left: 16px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .leaf, .leaf .halo, .hub-halo { animation: none !important; opacity: 1; }
+  .leaf, .leaf .halo, .cp-halo, .cp-root-halo { animation: none !important; opacity: 1; }
   .leaf { transition: none; }
 }
