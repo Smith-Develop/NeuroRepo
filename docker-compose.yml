@@ -37,12 +37,17 @@ services:
     mem_limit: 4g # tope para no ahogar al resto de apps del servidor
     restart: unless-stopped
 
-  # Descarga el modelo la primera vez (~2 GB) y termina
+  # Descarga el modelo la primera vez (~2 GB) y termina. Reintenta: "ollama" puede no estar
+  # aceptando conexiones todavía justo cuando este contenedor arranca (depends_on solo espera a
+  # que el contenedor se inicie, no a que el servidor HTTP esté listo), y sin reintento ese fallo
+  # deja a "app" sin arrancar nunca (depende de que "model" termine con éxito).
   model:
     image: ollama/ollama:latest
     depends_on: [ollama]
-    environment: [OLLAMA_HOST=ollama:11434]
-    entrypoint: ["ollama", "pull", "${OLLAMA_MODEL:-qwen2.5:3b}"]
+    environment:
+      - OLLAMA_HOST=ollama:11434
+      - OLLAMA_MODEL=${OLLAMA_MODEL:-qwen2.5:3b}
+    entrypoint: ["sh", "-c", "for i in $(seq 1 40); do ollama pull \"$$OLLAMA_MODEL\" && exit 0; echo 'ollama no está listo todavía, reintentando...'; sleep 3; done; exit 1"]
     restart: "no"
     x-exclude_from_hc: true
 
