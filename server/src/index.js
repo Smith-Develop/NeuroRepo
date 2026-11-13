@@ -36,8 +36,22 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: "Error interno del servidor" });
 });
 
+// Reintenta la conexión inicial a Mongo: justo al arrancar el contenedor, el contenedor de Mongo
+// puede no estar aceptando conexiones todavía aunque Docker ya lo marque como "Started".
+async function connectWithRetry(uri, attempts = 10, delayMs = 2000) {
+  for (let i = 1; i <= attempts; i++) {
+    try {
+      return await mongoose.connect(uri);
+    } catch (e) {
+      if (i === attempts) throw e;
+      console.error(`Mongo no está listo todavía (intento ${i}/${attempts}): ${e.message}`);
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
+}
+
 const PORT = process.env.PORT || 4000;
-await mongoose.connect(process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/notas-ia");
+await connectWithRetry(process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/notas-ia");
 await bootstrapAdmin();
 scheduleIndexing();
 app.listen(PORT, () => console.log(`App en http://localhost:${PORT}`));
