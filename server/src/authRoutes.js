@@ -1,19 +1,24 @@
 import { Router } from "express";
 import mongoose from "mongoose";
-import { User, Session, Suggestion, Group } from "./models.js";
-import { hashPassword, verifyPassword, createSession, setSessionCookie, clearSessionCookie, requireAuth, requireAdmin, sessionToken } from "./auth.js";
+import { User, Session, Group } from "./models.js";
+import { hashPassword, verifyPassword, createSession, setSessionCookie, clearSessionCookie, requireAdmin } from "./auth.js";
 
 const r = Router();
 const wrap = (fn) => (req, res, next) => fn(req, res).catch(next);
 const text = (v, max = Infinity) => (typeof v === "string" ? v.trim().slice(0, max) : "");
-const publicUser = (u) => ({ _id: u._id, username: u.username, role: u.role });
+const publicUser = (u) => ({ _id: u._id, name: u.name, dni: u.dni, role: u.role });
 
+// Los usuarios normales entran solo con su DNI; el admin necesita además su contraseña.
+// Si se manda un DNI de admin sin contraseña, se avisa con needsPassword para que el cliente pida el segundo campo.
 r.post("/login", wrap(async (req, res) => {
-  const username = text(req.body?.username, 80).toLowerCase();
-  const password = text(req.body?.password, 200);
-  const user = username && (await User.findOne({ username }));
-  if (!user || !verifyPassword(password, user.passwordHash)) {
-    return res.status(401).json({ error: "Usuario o contraseña incorrectos." });
+  const dni = text(req.body?.dni, 40).toUpperCase();
+  if (!dni) return res.status(400).json({ error: "Escribe tu DNI." });
+  const user = await User.findOne({ dni });
+  if (!user) return res.status(401).json({ error: "DNI no reconocido." });
+  if (user.role === "admin") {
+    const password = text(req.body?.password, 200);
+    if (!password) return res.status(401).json({ error: "Este DNI necesita contraseña.", needsPassword: true });
+    if (!verifyPassword(password, user.passwordHash)) return res.status(401).json({ error: "Contraseña incorrecta." });
   }
   const { token, expiresAt } = await createSession(user);
   setSessionCookie(req, res, token, expiresAt);
@@ -33,42 +38,28 @@ r.get("/me", wrap(async (req, res) => {
 
 // Gestión de usuarios: solo el admin
 r.post("/users", requireAdmin, wrap(async (req, res) => {
-  const username = text(req.body?.username, 80).toLowerCase();
-  const password = text(req.body?.password, 200);
-  if (!username || password.length < 4) return res.status(400).json({ error: "Usuario y contraseña (mín. 4 caracteres) son obligatorios." });
-  if (await User.exists({ username })) return res.status(400).json({ error: "Ya existe ese usuario." });
-  const user = await User.create({ username, passwordHash: hashPassword(password), role: "user" });
+  const name = text(req.body?.name, 120);
+  const dni = text(req.body?.dni, 40).toUpperCase();
+  if (!name || !dni) return res.status(400).json({ error: "Nombre y DNI son obligatorios." });
+  if (await User.exists({ dni })) return res.status(400).json({ error: "Ya existe un usuario con ese DNI." });
+  const group = mongoose.isValidObjectId(req.body?.group) ? req.body.group : null;
+  const user = await User.create({ name, dni, role: "user", group });
   res.status(201).json(publicUser(user));
 }));
 
 r.get("/users", requireAdmin, wrap(async (req, res) => {
-  res.json(await User.find({}, "username role group createdAt").sort({ createdAt: 1 }).populate("group", "name").lean());
+  res.json(await User.find({}, "name dni role group createdAt").sort({ createdAt: 1 }).populate("group", "name").lean());
 }));
 
 r.patch("/users/:id", requireAdmin, wrap(async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).end();
   const update = {};
+  if (text(req.body?.name, 120)) update.name = text(req.body.name, 120);
   if (req.body?.group === null) update.group = null;
   else if (mongoose.isValidObjectId(req.body?.group)) update.group = req.body.group;
   const user = await User.findOneAndUpdate({ _id: req.params.id, role: "user" }, update, { returnDocument: "after" })
-    .select("username role group").populate("group", "name");
+    .select("name dni role group").populate("group", "name");
   user ? res.json(user) : res.status(404).end();
-}));
-
-// Resetear contraseña (admin, para cualquier usuario incluido él mismo).
-// Cierra las sesiones abiertas de ese usuario, salvo la sesión desde la que se hace el cambio.
-r.post("/users/:id/password", requireAdmin, wrap(async (req, res) => {
-  if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).end();
-  const password = typeof req.body?.password === "string" ? req.body.password : "";
-  if (password.trim().length < 4 || password.length > 200) {
-    return res.status(400).json({ error: "La contraseña debe tener entre 4 y 200 caracteres." });
-  }
-  const user = await User.findById(req.params.id);
-  if (!user) return res.status(404).end();
-  user.passwordHash = hashPassword(password.trim());
-  await user.save();
-  const { deletedCount } = await Session.deleteMany({ user: user._id, _id: { $ne: sessionToken(req) } });
-  res.json({ ok: true, closedSessions: deletedCount });
 }));
 
 r.delete("/users/:id", requireAdmin, wrap(async (req, res) => {
@@ -80,26 +71,49 @@ r.delete("/users/:id", requireAdmin, wrap(async (req, res) => {
   res.status(204).end();
 }));
 
-// Grupos: limitan qué apps puede consultar un usuario sin grupo = sin acceso a ninguna
+// Importación masiva: una línea por usuario "Nombre,DNI". Crea los nuevos y actualiza el nombre de los que ya existan.
+r.post("/users/import", requireAdmin, wrap(async (req, res) => {
+  const content = text(req.body?.text, 500_000);
+  if (!content) return res.status(400).json({ error: "Manda el contenido del .txt." });
+  const lines = content.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  let created = 0, updated = 0;
+  const errors = [];
+  for (const [i, line] of lines.entries()) {
+    const [rawName, rawDni] = line.split(",");
+    const name = text(rawName, 120);
+    const dni = text(rawDni, 40).toUpperCase();
+    if (!name || !dni) { errors.push({ line: i + 1, reason: "Formato esperado: Nombre,DNI" }); continue; }
+    const existing = await User.findOne({ dni });
+    if (existing) {
+      if (existing.role !== "admin") { existing.name = name; await existing.save(); updated++; }
+    } else {
+      await User.create({ name, dni, role: "user" });
+      created++;
+    }
+  }
+  res.json({ created, updated, skipped: errors.length, errors: errors.slice(0, 50) });
+}));
+
+// Grupos: limitan qué carpetas puede consultar un usuario; sin grupo = sin acceso a ninguna
 r.post("/groups", requireAdmin, wrap(async (req, res) => {
   const name = text(req.body?.name, 80);
   if (!name) return res.status(400).json({ error: "Dale un nombre al grupo." });
-  const apps = Array.isArray(req.body?.apps) ? req.body.apps.filter((id) => mongoose.isValidObjectId(id)) : [];
+  const folders = Array.isArray(req.body?.folders) ? [...new Set(req.body.folders.map((f) => text(f, 200)).filter(Boolean))] : [];
   if (await Group.exists({ name })) return res.status(400).json({ error: "Ya existe un grupo con ese nombre." });
-  const group = await Group.create({ name, apps });
-  res.status(201).json(await group.populate("apps", "name"));
+  const group = await Group.create({ name, folders });
+  res.status(201).json(group);
 }));
 
 r.get("/groups", requireAdmin, wrap(async (req, res) => {
-  res.json(await Group.find().sort({ createdAt: 1 }).populate("apps", "name").lean());
+  res.json(await Group.find().sort({ createdAt: 1 }).lean());
 }));
 
 r.patch("/groups/:id", requireAdmin, wrap(async (req, res) => {
   if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).end();
   const update = {};
   if (text(req.body?.name, 80)) update.name = text(req.body.name, 80);
-  if (Array.isArray(req.body?.apps)) update.apps = req.body.apps.filter((id) => mongoose.isValidObjectId(id));
-  const group = await Group.findByIdAndUpdate(req.params.id, update, { returnDocument: "after" }).populate("apps", "name");
+  if (Array.isArray(req.body?.folders)) update.folders = [...new Set(req.body.folders.map((f) => text(f, 200)).filter(Boolean))];
+  const group = await Group.findByIdAndUpdate(req.params.id, update, { returnDocument: "after" });
   group ? res.json(group) : res.status(404).end();
 }));
 
@@ -108,33 +122,6 @@ r.delete("/groups/:id", requireAdmin, wrap(async (req, res) => {
   await Group.deleteOne({ _id: req.params.id });
   await User.updateMany({ group: req.params.id }, { group: null });
   res.status(204).end();
-}));
-
-// Sugerencias: cualquier persona logueada manda, solo el admin las revisa
-r.post("/suggestions", requireAuth, wrap(async (req, res) => {
-  const t = text(req.body?.text, 4000);
-  if (!t) return res.status(400).json({ error: "Escribe algo antes de enviarlo." });
-  const kind = req.body?.kind === "cambio" ? "cambio" : "nota";
-  const note = mongoose.isValidObjectId(req.body?.note) ? req.body.note : undefined;
-  const suggestion = await Suggestion.create({ text: t, kind, note, author: req.user._id });
-  res.status(201).json(suggestion);
-}));
-
-r.get("/suggestions", requireAdmin, wrap(async (req, res) => {
-  res.json(
-    await Suggestion.find().sort({ createdAt: -1 }).limit(200)
-      .populate("author", "username").populate("note", "title").lean(),
-  );
-}));
-
-r.patch("/suggestions/:id", requireAdmin, wrap(async (req, res) => {
-  if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).end();
-  const update = {};
-  if (["pendiente", "resuelta", "descartada"].includes(req.body?.status)) update.status = req.body.status;
-  if (mongoose.isValidObjectId(req.body?.note)) update.note = req.body.note;
-  const s = await Suggestion.findByIdAndUpdate(req.params.id, update, { returnDocument: "after" })
-    .populate("author", "username").populate("note", "title");
-  s ? res.json(s) : res.status(404).end();
 }));
 
 export default r;

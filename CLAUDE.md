@@ -1,77 +1,139 @@
-# Mi conocimiento (notas-ia)
+# Biblioteca de documentos (NeuroRepo)
 
-App MERN para guardar lo aprendido en el trabajo. Interfaz tipo ChatGPT (barra lateral + chat centrado) +
-una **red de conocimiento** visual tipo red neuronal, que se muestra u oculta desde la barra lateral (cada
-app/escenario es una neurona central; sus casuísticas son neuronas satélite a su alrededor). Las casuísticas
-se pueden **enlazar entre sí** cuando una depende de otra; el enlace se dibuja como una sinapsis. Una nota
-puede tener además una **categoría** (agrupa casuísticas dentro de la app, p. ej. HCIS → Errores) y un
-**procedimiento** opcional: un diagrama de flujo (inicio/paso/decisión/fin, con rama «No» en las decisiones)
-que se dibuja solo a partir de una lista de pasos ordenados.
+App MERN tipo gestor documental (parecido a Alfresco Community, con IA) para una carpeta de documentos
+del trabajo. Interfaz tipo ChatGPT (barra lateral + chat centrado): en el chat se **busca** documentación
+(por coincidencia de texto, no redactando respuestas) y se muestran los documentos encontrados con opción
+de **verlos** (PDF/imágenes, en línea) o **descargarlos**. También hay un **explorador de carpetas**
+(`Documentos` en la barra lateral) para navegar todo lo indexado como un árbol de archivos.
 
-**Multiusuario con roles** (sesión por cookie, sin contraseña compartida):
-- **admin**: único rol con permiso para crear/editar/borrar notas y apps. Usa la IA para clasificar
-  (`classifyNote`) y crea usuarios normales desde «Usuarios».
-- **user** (normal): solo puede **Buscar** (la IA responde en lenguaje natural) y **Aprendí algo**. Este
-  segundo modo **no llama a la IA**: el texto tal cual se manda a «Sugerencias» para que el admin lo revise
-  y decida si lo analiza (ahí sí entra la IA) y lo guarda. También puede **avisar de un cambio** sobre una
-  nota existente desde su ficha (mismo mecanismo de Sugerencias, con `kind:"cambio"` y la nota enlazada).
-  Nunca ve el borrador de la IA ni puede crear/editar/borrar notas directamente. Además, un usuario sin
-  **grupo** asignado no puede consultar ninguna app: si pregunta (Buscar) algo cuya mejor coincidencia está
-  en una app sin permiso, no se llama a la IA y recibe el mensaje que el admin configuró para esa app (o uno
-  genérico). La red/mapa de ese usuario tampoco muestra esas apps.
+La documentación vive **fuera de la app**, en una carpeta del sistema de archivos del host, montada de
+solo lectura en Docker. Mongo solo guarda el **índice** (metadatos + texto extraído de cada archivo),
+nunca el archivo en sí. El admin elige qué subcarpeta de esa carpeta montada está activa con el botón
+**«Vincular biblioteca»**, sin tocar Docker ni redesplegar.
+
+**Multiusuario con roles** (sesión por cookie):
+- **Usuarios normales**: se dan de alta con **nombre + DNI, sin contraseña**; entran escribiendo solo su
+  DNI. Solo pueden **buscar/consultar** documentos de las carpetas que les permita su grupo; sin grupo
+  asignado no pueden consultar ninguna carpeta (ni en el chat ni en el explorador). Si preguntan por algo
+  de una carpeta sin permiso, no se llama a la IA: reciben el mensaje que el admin configuró para esa
+  carpeta (o uno genérico).
+- **admin**: único rol que mantiene **contraseña** (por ser la cuenta que gestiona usuarios, grupos y la
+  biblioteca). Ve todas las carpetas sin restricción. Gestiona usuarios (crear/borrar/asignar grupo, o
+  importar una lista por `.txt`), grupos (qué carpetas puede ver cada uno + el mensaje de carpeta
+  bloqueada) y la biblioteca activa.
 Nada depende de APIs de pago.
 
 ## Stack
-- `server/` Node 22 + Express 5 + Mongoose 9 (ESM, sin TypeScript). Zod 4 para validar la salida de la IA.
+- `server/` Node 22 + Express 5 + Mongoose 9 (ESM, sin TypeScript).
 - `client/` React 19 + Vite, sin librerías de UI ni de gráficos. CSS plano en `src/index.css` (tema oscuro).
-- IA: Ollama vía REST (`fetch`, sin SDK). Modelo por defecto `qwen2.5:3b` (`OLLAMA_MODEL`).
-- MongoDB 7. Índice de texto en español sobre las notas (`server/src/models.js`).
+- Extracción de texto: `pdf-parse` (PDF), `mammoth` (`.docx`), `xlsx` (SheetJS — instalado desde
+  `cdn.sheetjs.com`, no desde npm, porque la versión publicada en el registro de npm tiene vulnerabilidades
+  sin parchear; la build de SheetJS sí las corrige). `.txt`/`.md`/`.csv` se leen directamente.
+- IA: Ollama vía REST (`fetch`, sin SDK), usada **solo como respaldo** de la búsqueda (ver más abajo).
+  Modelo por defecto `qwen2.5:3b` (`OLLAMA_MODEL`).
+- MongoDB 7. Índice de texto en español sobre los documentos (`server/src/models.js`).
 
 ## Archivos clave
-- `server/src/ai.js` – llamadas a Ollama (`fetch`). `classifyNote` en **2 pasos**:
-  1. Analiza la nota con JSON Schema (`format`) → título, resumen, keyPoints, tags, área propuesta. No ve los escenarios existentes, para no sesgarlo.
-  2. `chooseScenario`: elige entre los escenarios existentes con un `enum` cerrado (+ `"NINGUNO"`); si es NINGUNO se usa el área propuesta. Devuelve `isNewScenario`.
-  `answerQuestion(question, notes)` – responde en texto libre (sin JSON Schema) usando solo las notas que le pasa `routes.js` (máx. 6, recortadas a 1500 caracteres cada una); nunca ve notas que la búsqueda no encontró.
+- `server/src/library.js` – `LIBRARY_ROOT` (ruta montada en Docker, de solo lectura) y la biblioteca
+  **activa** (`AppConfig.libraryPath`, una subcarpeta relativa elegida con «Vincular biblioteca»).
+  `safeResolve` evita salirse de la raíz montada (path traversal). `browseFolder` lista subcarpetas para
+  el selector; `setActiveLibraryPath` cambia la carpeta activa (la siguiente pasada del indexador poda
+  solo los documentos que ya no están bajo la nueva carpeta).
+- `server/src/indexer.js` – `scanLibrary()` recorre la biblioteca activa (`fs.readdir` recursivo nativo,
+  sin librería), extrae texto solo de lo nuevo/cambiado (compara `mtimeMs`/`size`) y borra de Mongo lo que
+  ya no existe en disco. `scheduleIndexing()` lo lanza al arrancar y cada `SCAN_INTERVAL_MINUTES`.
+- `server/src/search.js` – `searchDocuments(query)`: `$text` de Mongo + `rerank` (coincidencia de palabras
+  distintas de la consulta, raíz de 5 letras sin tildes, igual criterio que el buscador anterior de notas).
+  **Importante**: la puntuación (`score: {$meta:"textScore"}`) va en la MISMA llamada a `.find()`/proyección
+  que el resto de campos — encadenar un `.select()` aparte la pisa y `score` llega `undefined` (bug real que
+  apareció al construirlo; dejarlo documentado para no repetirlo).
+- `server/src/ai.js` – `suggestKeywords(question)`: la IA solo convierte la pregunta en palabras clave
+  para reintentar la búsqueda; nunca redacta una respuesta sobre el contenido de los documentos (evita
+  alucinaciones y uso innecesario de IA).
 - `server/src/routes.js` – API bajo `/api`:
-  - `POST /notes/draft {text}` (**admin**) → borrador de la IA, no guarda nada.
-  - `POST /notes {raw,title,summary,keyPoints,tags,category,scenario,scenarioDescription,relatedNotes,steps}` (**admin**) → guarda lo revisado (`noteFields` valida y limita tamaños; `validateSteps` valida el procedimiento y remapea los índices de `noTarget` si se quitan pasos sin texto). La app se busca por nombre sin distinguir mayúsculas o se crea con un color libre. `relatedNotes: [{note,reason}]` se valida con `relations()` (deben existir, sin auto-referencia, máx. 30).
-  - `GET /notes` (cualquier logueado; todas, para la red, **filtradas por `allowedScenarioIds` si no es admin**) · `GET /notes?q=` búsqueda `$text` + `rerank` (palabras distintas de la pregunta que aparecen, raíz de 5 letras sin tildes; también mira `category`), devuelve las notas tal cual (usado por `NoteForm`/`Builder` para enlazar). Ambas pueblan `relatedNotes.note` (solo `title`).
-  - `POST /ask {question}` (cualquier logueado) → `searchNotes` **sin filtrar** (para detectar si hay respuesta aunque esté bloqueada); si no es admin y la app del mejor resultado no está permitida, responde con el `blockedMessage` de esa app (o uno genérico) **sin llamar a la IA**; si está permitida, filtra el resto de resultados a solo apps permitidas y sigue como siempre (`answerQuestion`). `answer: null` solo si la búsqueda no encontró nada en absoluto.
-  - `PATCH /notes/:id`, `DELETE /notes/:id` (**admin**; borra también las referencias a esa nota en `relatedNotes` de otras). Las apps que se quedan sin notas se podan (`prune`).
-  - `GET /scenarios` (cualquier logueado, filtradas igual que `/notes`), `PATCH /scenarios/:id` (**admin**; incluye `blockedMessage`).
-- `server/src/models.js` – `Scenario {name, description, color, blockedMessage}`, `Note` (incluye `relatedNotes: [{note, reason}]`, `category`, `steps: [{type, text, noTarget?}]`), `User {username, passwordHash, role, group}`, `Session {_id: token, user, expiresAt}` (índice TTL), `Suggestion {text, kind: "nota"|"cambio", note?, author, status}`, `Group {name, apps: [Scenario]}`.
-- `server/src/auth.js` – `hashPassword`/`verifyPassword` (`node:crypto` `scryptSync`, sin librerías), `attachUser` (lee la cookie `sid` a mano, sin `cookie-parser`; deja `req.user` con su `group.apps` ya poblado, o `null`), `requireAuth`/`requireAdmin`, `allowedScenarioIds(user)` (Set de apps permitidas; vacío si no tiene grupo), `bootstrapAdmin()`. La cookie se marca `secure` según `req.secure`/`X-Forwarded-Proto`, **no** según `NODE_ENV` (el contenedor también se usa en local sin TLS).
-- `server/src/authRoutes.js` – `/login`, `/logout`, `/me`, `/users` (admin: crear/listar/borrar; `PATCH /users/:id {group}` reasigna grupo), `POST /users/:id/password {password}` (admin, cualquier usuario incluido él mismo: cambia el hash y cierra todas las sesiones de ese usuario salvo la del que hace el cambio; 4-200 caracteres, se recorta como en el login), `/groups` (admin: CRUD; al borrar un grupo, sus usuarios quedan sin grupo), `/suggestions` (crear: cualquiera logueado; listar/editar: admin).
-- `server/src/index.js` – `attachUser` → `authRoutes` (sin proteger) → `requireAuth` + `routes` (resto de la API). `app.set("trust proxy", 1)` para que la cookie `secure` funcione tras el proxy de Coolify. Sirve `client/dist`, errores (`AIError` → 502).
-- `client/src/Network.jsx` – SVG propio, red tipo neuronal: cada app es una neurona central (posición fija en un anillo); sus casuísticas son neuronas satélite colocadas con una simulación de fuerzas minimalista escrita a mano (repulsión + resorte hacia su app + resorte en cada enlace cruzado, sin librería). Los enlaces (`relatedNotes`) se dibujan como «sinapsis» discontinuas que pueden cruzar entre apps. La etiqueta de cada app se coloca en el lado contrario a sus casuísticas para no solaparse. `PALETTE` debe tener `PALETTE_SIZE` (8) colores, como en `routes.js`. Zoom/pan manual (rueda del ratón centrada en el cursor, arrastre y botones +/−/reset) con una `<g transform>` interna; `vx,vy,vw,vh` son el viewBox fijo, `cam` es la cámara interactiva.
-- `client/src/Chat.jsx` – chat estilo ChatGPT, recibe `user` y cambia de comportamiento según `user.role`. Modos «Aprendí algo» / «Buscar» (pasa solo a Buscar si el texto empieza por «¿» o termina en «?»); «🧱 Construir» (abre `Builder.jsx`) solo para admin. Si no es admin, «Aprendí algo» llama a `api.createSuggestion` en vez de `api.draft` (sin borrador de IA). Mensajes tipo `text|loading|error|draft|saved|answer|builder`. En `answer`, `m.answer` es la respuesta en lenguaje natural de la IA (o `null`) y `m.results` son las notas usadas, plegadas en un `<details>`. El historial vive solo en memoria.
-- `client/src/NoteForm.jsx` – formulario de revisión/edición (reutilizado en el chat, en `Suggestions.jsx` y en el panel de la nota): campo «Categoría» (datalist derivado en memoria de `notes` filtradas por la app elegida, sin endpoint nuevo), editor de «Depende de», y `StepsEditor` para el procedimiento. `client/src/StepsEditor.jsx` – editor del diagrama de flujo (pasos ordenados, subir/bajar/quitar, selector de destino «Si es No, ir a» para las decisiones), compartido con `Builder.jsx`. `client/src/Flowchart.jsx` – dibuja ese procedimiento en modo solo lectura (SVG, layout trivial por índice de fila, rama «No» como curva lateral con `foreignObject` para el texto de cada caja). `client/src/Builder.jsx` – constructor manual sin IA (piezas arrastrables, pointer events; incluye piezas de Categoría y Procedimiento). `NoteCard.jsx` – nota guardada (muestra «App · Categoría» y el `Flowchart` si tiene pasos), enlaces como botones que navegan a la otra nota.
-- `client/src/Login.jsx` – formulario de acceso (`api.login`). `client/src/Sidebar.jsx` – nav tipo ChatGPT: «Chat»/«Mapa» para todos, «Sugerencias» (con contador de pendientes), «Usuarios» y «Grupos» solo si `user.role === "admin"`. `client/src/Suggestions.jsx` (admin) – bandeja de sugerencias: «Analizar con IA» llama a `api.draft` con el texto y abre `NoteForm`; al guardar, marca la sugerencia `resuelta` y la enlaza a la nota creada. «Descartar» → `status:"descartada"`. `client/src/Users.jsx` (admin) – crear/listar/borrar usuarios, asignarles un grupo (`<select>` por fila) y «Resetear contraseña» (formulario en la fila, con «Generar» aleatoria vía `crypto.getRandomValues`; la contraseña se ve en claro a propósito para poder dársela al usuario). `client/src/Groups.jsx` (admin) – arriba, el `blockedMessage` editable de cada app; abajo, crear/listar/borrar grupos (nombre + checkboxes de apps permitidas).
-- `client/src/App.jsx` – al montar llama a `api.me()`; sin sesión muestra `Login`. Con sesión, shell de dos columnas (`Sidebar` + vista principal que **cambia de contenido** según `view`: chat/red/sugerencias/usuarios, no un split fijo). El modal de nota (`.modal-backdrop` + `.drawer`, centrado, se cierra pulsando fuera o con «×») muestra Editar/Borrar solo si admin, o «Avisar de un cambio» (crea una `Suggestion` con `kind:"cambio"`) si no. `showNote` siempre resuelve contra la lista completa de `notes` en memoria, aunque se le pase una nota parcial.
+  - `GET /documents?q=` (cualquier logueado) → sin `q`, lista ligera (para el árbol de carpetas) filtrada
+    por carpetas permitidas; con `q`, búsqueda con `excerpt` por documento.
+  - `POST /ask {question}` (cualquier logueado) → busca por texto; si la mejor coincidencia es de una
+    carpeta sin permiso, devuelve el `blockedMessage` de esa carpeta **sin llamar a la IA**; si no hay nada
+    razonable (`score` por debajo de `AI_FALLBACK_SCORE`, por defecto 0.3), pide a la IA mejores palabras
+    clave y reintenta una vez.
+  - `GET /documents/:id/view` (inline, PDF/imágenes) y `/download` (adjunto): resuelven `Document.path`
+    contra la biblioteca activa con `safeResolve` y comprueban permiso por `topFolder`.
+  - `GET /folders` / `PATCH /folders/:name` (admin) – carpetas de primer nivel existentes + su
+    `blockedMessage`.
+  - `GET /library`, `GET /library/browse?path=`, `POST /library/select`, `POST /library/reindex` (admin) –
+    estado de la biblioteca y el selector «Vincular biblioteca».
+- `server/src/models.js` – `Document {path, filename, ext, folder, topFolder, size, mtimeMs,
+  extractedText, textOk}` (índice de texto en `filename`/`folder`/`extractedText`), `Group {name,
+  folders: [String]}` (nombres de carpetas de primer nivel, no referencias), `FolderConfig {folder,
+  blockedMessage}`, `AppConfig` (documento único con la biblioteca activa y el estado del último escaneo),
+  `User {name, dni, passwordHash?, role, group}` (`passwordHash` solo lo tiene el admin), `Session`
+  (índice TTL, igual que antes).
+- `server/src/auth.js` – `allowedFolders(user)` (Set de carpetas permitidas; vacío si no tiene grupo).
+  `bootstrapAdmin()` crea el admin a partir de `BOOTSTRAP_ADMIN_NAME/DNI/PASSWORD` si no existe ninguno.
+- `server/src/authRoutes.js` – `POST /login {dni, password?}`: los usuarios normales entran solo con DNI;
+  si el DNI es del admin y no se manda contraseña, responde `401 {needsPassword:true}` para que el cliente
+  pida el segundo campo. `/users`, `/users/import` (texto `Nombre,DNI` por línea, upsert por DNI),
+  `/groups` (CRUD con `folders: [String]`).
+- `client/src/Chat.jsx` – un único modo (buscar); cada resultado es una `DocumentCard` con «Ver»/«Descargar».
+- `client/src/Explorer.jsx` – árbol de carpetas construido en memoria a partir de `GET /documents` (filtro
+  de texto en cliente, con `<details>` nativo para expandir/colapsar, sin JS de estado por nodo).
+- `client/src/LibraryPicker.jsx` – modal «Vincular biblioteca»: navega subcarpetas de `LIBRARY_ROOT`,
+  fija la activa, muestra el estado del índice y permite reindexar bajo demanda.
+- `client/src/Login.jsx` – un único campo DNI; si el servidor responde `needsPassword`, aparece el segundo
+  campo de contraseña (solo le pasa al admin).
+- `client/src/Users.jsx` – alta nombre+DNI, botón «Importar .txt» (lee el archivo con `FileReader` en el
+  navegador y manda el texto tal cual, sin subida multipart). `client/src/Groups.jsx` – carpetas en vez de
+  apps (checkboxes dinámicos a partir de `GET /folders`) + `blockedMessage` por carpeta.
 
 ## Decisiones (no revertir sin motivo)
-- Los prompts se probaron con qwen2.5:3b: con un solo paso, o pidiendo "reutilizar escenarios", el modelo mete todo en el primer escenario. El esquema de 2 pasos acertó 6/8 en las pruebas.
-- No dar ejemplos de nombres de escenario en el prompt: el modelo 3B los copia literalmente.
-- El orden de campos del esquema importa (primero entender la nota, al final el área).
-- `answerQuestion` solo ve las notas que ya encontró la búsqueda de texto (nunca el total de la base): así no inventa sobre temas sin notas guardadas.
-- `temperature: 0` para clasificar, `num_ctx: 8192`, timeout 300 s (en CPU tarda ~20-27 s por borrador y ~10-15 s por pregunta).
-- En `NODE_ENV=production` la app no arranca sin `APP_PASSWORD` (hace falta para crear el primer admin). Ollama nunca publica su puerto.
-- Solo existe el rol admin y user; el admin no puede crear más admins desde la UI (`POST /users` siempre crea `role:"user"`). Para un segundo admin, crearlo a mano en Mongo o por env var en otro arranque sin admins.
-- Un usuario normal nunca dispara una llamada a la IA de clasificación/borrador (`classifyNote`); solo usa `answerQuestion` (Buscar). Esto es intencional: la IA para escribir en la base de conocimiento es cosa del admin.
+- **Por qué no es posible un botón que abra el Explorador de Windows real desde dentro de la app**: un
+  navegador nunca puede devolverle al servidor una ruta absoluta del disco, y aunque pudiera, el
+  contenedor no vería esa ruta sin montarla antes en Docker. Por eso «Vincular biblioteca» es un
+  explorador propio dentro de la app, limitado a lo que ya está montado en `LIBRARY_ROOT`.
+- La carpeta base (`LIBRARY_ROOT`, vía `DOCS_HOST_PATH` en el host) se monta **una sola vez** al desplegar;
+  la subcarpeta activa dentro de ella se cambia en caliente con «Vincular biblioteca», sin tocar Docker.
+- Búsqueda primero por coincidencia de texto (barata, instantánea); la IA es siempre un respaldo, nunca el
+  camino por defecto, y solo reformula la pregunta en palabras clave — nunca redacta una respuesta sobre
+  el contenido (evita alucinaciones y uso innecesario de IA).
+- DNI sin contraseña para usuarios normales es una decisión consciente del cliente: un DNI no es secreto,
+  así que quien lo conozca puede entrar como esa persona. El admin sí mantiene contraseña por gestionar
+  usuarios/permisos/biblioteca.
+- El módulo anterior de notas/escenarios/procedimientos/red neuronal (`Note`, `Scenario`, `Suggestion`,
+  `Network.jsx`, `Builder.jsx`, `Flowchart*.jsx`, `NoteForm.jsx`, etc.) se eliminó por completo al pivotar
+  a gestor documental; su backup (60 notas reales) queda en `scripts/data/aplicaciones.json` (no en git).
+- `xlsx` se instala desde `cdn.sheetjs.com`, no desde npm: la versión publicada en el registro de npm
+  tiene vulnerabilidades (prototype pollution, ReDoS) que SheetJS solo corrigió en su propia build.
+- Al extraer `.xlsx`, usar `XLSX.read(fs.readFileSync(path))`, no `XLSX.readFile(path)`: esta última falla
+  dentro del contenedor con «Cannot access file» aunque Node sí puede leer el archivo.
+- En `NODE_ENV=production` la app no arranca sin `BOOTSTRAP_ADMIN_DNI`/`BOOTSTRAP_ADMIN_PASSWORD` (hace
+  falta para crear el primer admin). Ollama nunca publica su puerto.
+- Solo existe el rol admin y user; el admin no puede crear más admins desde la UI. Para un segundo admin,
+  crearlo a mano en Mongo o por env var en otro arranque sin admins.
 
 ## Ejecutar
-- Docker local: `docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build` → http://localhost:4000. `APP_PASSWORD` (+ `APP_USER`, por defecto `admin`) crea el primer admin la primera vez que arranca con la base vacía de usuarios; después esas variables ya no hacen falta (la contraseña vive hasheada en Mongo).
-- Desarrollo: `ollama pull qwen2.5:3b`, MongoDB en marcha, `cd server && cp .env.example .env && npm run dev`, `cd client && npm run dev` → http://localhost:5173 (Vite hace proxy de `/api` a :4000). El login necesita que el backend real esté arriba (usa cookies, no hay forma de simular la sesión aparte).
-- Comprobaciones rápidas: `node --check server/src/*.js`, `cd client && npm run build`. No hay tests automatizados todavía.
-- Pendientes conocidos: paginar `GET /notes` si pasa de ~2000 hojas, guardar el historial del chat.
+- Docker local: crea `DOCS_HOST_PATH` (carpeta del host con documentos de prueba) y
+  `BOOTSTRAP_ADMIN_DNI`/`BOOTSTRAP_ADMIN_PASSWORD` en `.env`, luego
+  `docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build` → http://localhost:4000.
+- Desarrollo: `ollama pull qwen2.5:3b`, MongoDB en marcha, `cd server && cp .env.example .env && npm run dev`
+  (ajusta `LIBRARY_ROOT` a una carpeta local de prueba), `cd client && npm run dev` → http://localhost:5173
+  (Vite hace proxy de `/api` a :4000).
+- Comprobaciones rápidas: `node --check server/src/*.js`, `cd client && npm run build`. No hay tests
+  automatizados todavía.
+- Pendientes conocidos: sin vista previa en línea de Word/Excel (solo descarga); sin recuperación de
+  contraseña del admin; `GET /documents` sin paginar si la biblioteca pasa de ~5000 archivos.
 
 ## Despliegue (Coolify)
 - `docker-compose.yml` está preparado para Coolify (`SERVICE_FQDN_APP_4000`, sin puertos publicados).
-- Requisitos del VPS: ~4 GB de RAM libre, 4 vCPU recomendados, ~8 GB de disco, CPU con AVX2. Comprobar con `free -h && nproc && df -h /` antes de desplegar.
-- Desplegado en Coolify: proyecto «NeuroRepo», app `neurorepo` (uuid `b11eclxarnaji4ewyx6ter6y`, build pack dockercompose, GitHub App `smith-develop`, rama `main`) → https://neurorepo.coolify.kaizencode.me. Variables en Coolify: `APP_USER`, `APP_PASSWORD`, `OLLAMA_MODEL`. Redesplegar: `GET /api/v1/deploy?uuid=b11eclxarnaji4ewyx6ter6y`.
-- En la VPS un borrador de la IA tarda ~8-13 s. MongoDB limitado a 0,25 GB de caché y Ollama a 4 GB de RAM (`docker-compose.yml`) para compartir el servidor.
-- `scripts/seed-apps.mjs` vuelca de una vez todas las apps/casuísticas reales en una instalación nueva (p. ej. recién desplegada en Coolify, con la base de Mongo vacía). Lee `scripts/data/aplicaciones.json` (exportado de `GET /notes`), que **no está en git** (`.gitignore`) porque trae nombres y correos reales de personal en las observaciones; se guarda solo en local. Uso: `BASE_URL=https://tu-dominio APP_PASSWORD=... node scripts/seed-apps.mjs`. Pensado para una base vacía: si se ejecuta dos veces duplica las notas.
+  Necesita `DOCS_HOST_PATH` (carpeta del VPS con los documentos reales, fuera del repo) y
+  `BOOTSTRAP_ADMIN_DNI`/`BOOTSTRAP_ADMIN_PASSWORD` como variables de entorno.
+- Requisitos del VPS: ~4 GB de RAM libre, 4 vCPU recomendados, ~8 GB de disco, CPU con AVX2.
+- Desplegado en Coolify: proyecto «NeuroRepo», app `neurorepo` (uuid `b11eclxarnaji4ewyx6ter6y`) →
+  https://neurorepo.coolify.kaizencode.me. Redesplegar: `GET /api/v1/deploy?uuid=b11eclxarnaji4ewyx6ter6y`.
+  **Pendiente**: el pivote a gestor documental todavía no se ha desplegado ahí (solo probado en local); al
+  hacerlo, hay que decidir y montar `DOCS_HOST_PATH` en el VPS antes del primer arranque.
 
 ## Estilo
 - Código y comentarios en español en la UI/prompts; nombres de variables en inglés.
-- Sin dependencias nuevas para cosas que cubre Node/Express (p. ej. la autenticación usa `node:crypto`).
+- Sin dependencias nuevas para cosas que cubre Node/Express — salvo que, como aquí, sea inevitable para
+  leer formatos de archivo reales (PDF/Word/Excel) sin pasar por un servicio externo de pago.

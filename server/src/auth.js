@@ -52,24 +52,25 @@ export function clearSessionCookie(res) {
   res.clearCookie(COOKIE_NAME);
 }
 
-// Middleware no bloqueante: deja req.user (con role y, si lo tiene, su grupo con las apps permitidas) o null
+// Middleware no bloqueante: deja req.user (con role y, si lo tiene, su grupo con las carpetas permitidas) o null
 export async function attachUser(req, _res, next) {
   const token = parseCookies(req.headers.cookie)[COOKIE_NAME];
   req.user = null;
   if (token) {
     const session = await Session.findById(token).populate({
       path: "user",
-      select: "username role group",
-      populate: { path: "group", select: "apps" },
+      select: "name dni role group",
+      populate: { path: "group", select: "folders" },
     });
     if (session && session.expiresAt > new Date()) req.user = session.user;
   }
   next();
 }
 
-// Apps que puede consultar un usuario normal (vacío si no tiene grupo). El admin no usa esto: lo ve todo.
-export function allowedScenarioIds(user) {
-  return new Set((user.group?.apps ?? []).map(String));
+// Carpetas (de primer nivel) que puede consultar un usuario normal (vacío si no tiene grupo).
+// El admin no usa esto: lo ve todo.
+export function allowedFolders(user) {
+  return new Set(user.group?.folders ?? []);
 }
 
 export function requireAuth(req, res, next) {
@@ -83,12 +84,13 @@ export function requireAdmin(req, res, next) {
   next();
 }
 
-// Crea el admin a partir de APP_USER/APP_PASSWORD si todavía no existe ninguno
+// Crea el admin a partir de BOOTSTRAP_ADMIN_NAME/DNI/PASSWORD si todavía no existe ninguno
 export async function bootstrapAdmin() {
   if (await User.exists({ role: "admin" })) return;
-  const username = (process.env.APP_USER || "admin").toLowerCase();
-  const password = process.env.APP_PASSWORD;
-  if (!password) return; // en desarrollo sin contraseña: no se crea admin todavía
-  await User.create({ username, passwordHash: hashPassword(password), role: "admin" });
-  console.log(`Admin creado: ${username}`);
+  const name = process.env.BOOTSTRAP_ADMIN_NAME || "Administrador";
+  const dni = process.env.BOOTSTRAP_ADMIN_DNI;
+  const password = process.env.BOOTSTRAP_ADMIN_PASSWORD;
+  if (!dni || !password) return; // en desarrollo sin definir: no se crea admin todavía
+  await User.create({ name, dni: dni.toUpperCase(), passwordHash: hashPassword(password), role: "admin" });
+  console.log(`Admin creado: ${name} (${dni})`);
 }

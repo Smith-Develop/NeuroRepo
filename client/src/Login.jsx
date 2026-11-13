@@ -2,8 +2,9 @@ import { useState } from "react";
 import { api } from "./api";
 
 export default function Login({ onLogin }) {
-  const [username, setUsername] = useState("");
+  const [dni, setDni] = useState("");
   const [password, setPassword] = useState("");
+  const [needsPassword, setNeedsPassword] = useState(false);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -12,10 +13,11 @@ export default function Login({ onLogin }) {
     setBusy(true);
     setError("");
     try {
-      const { user } = await api.login(username.trim(), password);
+      const { user } = await api.login(dni.trim(), needsPassword ? password : undefined);
       onLogin(user);
     } catch (err) {
-      setError(err.message);
+      if (err.needsPassword) setNeedsPassword(true);
+      else setError(err.message);
     } finally {
       setBusy(false);
     }
@@ -25,14 +27,18 @@ export default function Login({ onLogin }) {
     <div className="login-screen">
       <form className="login-card" onSubmit={submit}>
         <div className="avatar login-avatar" aria-hidden="true" />
-        <h1>Mi conocimiento</h1>
-        <p className="login-sub">Entra para hablar con tu base de conocimiento.</p>
-        <label htmlFor="u">Usuario</label>
-        <input id="u" value={username} onChange={(e) => setUsername(e.target.value)} autoFocus required />
-        <label htmlFor="p">Contraseña</label>
-        <input id="p" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required />
+        <h1>Biblioteca de documentos</h1>
+        <p className="login-sub">Entra con tu DNI para buscar y consultar documentos.</p>
+        <label htmlFor="d">DNI</label>
+        <input id="d" value={dni} onChange={(e) => { setDni(e.target.value); setNeedsPassword(false); }} autoFocus required autoCapitalize="characters" />
+        {needsPassword && (
+          <>
+            <label htmlFor="p">Contraseña</label>
+            <input id="p" type="password" value={password} onChange={(e) => setPassword(e.target.value)} required autoFocus />
+          </>
+        )}
         {error && <p className="error" role="alert">{error}</p>}
-        <button disabled={busy || !username.trim() || !password}>{busy ? "Entrando…" : "Entrar"}</button>
+        <button disabled={busy || !dni.trim() || (needsPassword && !password)}>{busy ? "Entrando…" : "Entrar"}</button>
       </form>
     </div>
   );

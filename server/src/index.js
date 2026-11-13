@@ -7,12 +7,13 @@ import routes from "./routes.js";
 import authRoutes from "./authRoutes.js";
 import { attachUser, requireAuth, bootstrapAdmin } from "./auth.js";
 import { AIError } from "./ai.js";
+import { scheduleIndexing } from "./indexer.js";
 
 const app = express();
 app.set("trust proxy", 1); // para que req.secure/X-Forwarded-Proto funcionen tras el proxy de Coolify
 
-if (!process.env.APP_PASSWORD && process.env.NODE_ENV === "production") {
-  console.error("Falta APP_PASSWORD: no arranco en producción sin contraseña para crear el primer admin.");
+if (process.env.NODE_ENV === "production" && !(process.env.BOOTSTRAP_ADMIN_DNI && process.env.BOOTSTRAP_ADMIN_PASSWORD)) {
+  console.error("Faltan BOOTSTRAP_ADMIN_DNI/BOOTSTRAP_ADMIN_PASSWORD: no arranco en producción sin forma de crear el primer admin.");
   process.exit(1);
 }
 
@@ -38,4 +39,5 @@ app.use((err, _req, res, _next) => {
 const PORT = process.env.PORT || 4000;
 await mongoose.connect(process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/notas-ia");
 await bootstrapAdmin();
+scheduleIndexing();
 app.listen(PORT, () => console.log(`App en http://localhost:${PORT}`));
