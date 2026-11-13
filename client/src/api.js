@@ -43,4 +43,16 @@ export const api = {
   browseLibrary: (path = "") => req(`/library/browse?path=${encodeURIComponent(path)}`),
   selectLibrary: (path) => req("/library/select", { method: "POST", body: { path } }),
   reindexLibrary: () => req("/library/reindex", { method: "POST" }),
+  createFolder: (path, name) => req("/library/folders", { method: "POST", body: { path, name } }),
+  renameFolder: (path, newName) => req("/library/folders", { method: "PATCH", body: { path, newName } }),
+  deleteFolder: (path) => req(`/library/folders?path=${encodeURIComponent(path)}`, { method: "DELETE" }),
+  async uploadFiles(path, files) {
+    const form = new FormData();
+    form.append("path", path);
+    for (const file of files) form.append("files", file);
+    const res = await fetch("/api/library/upload", { method: "POST", body: form });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `Error ${res.status}`);
+    return data;
+  },
 };

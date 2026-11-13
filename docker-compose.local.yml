@@ -3,4 +3,4 @@ services:
   app:
     ports: ["4000:4000"]
     volumes:
-      - ${DOCS_HOST_PATH:?Define DOCS_HOST_PATH (carpeta del host con los documentos)}:/app/library:ro
+      - ${DOCS_HOST_PATH:?Define DOCS_HOST_PATH (carpeta del host con los documentos)}:/app/library

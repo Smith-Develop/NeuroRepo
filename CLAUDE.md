@@ -7,9 +7,10 @@ de **verlos** (PDF/imágenes, en línea) o **descargarlos**. También hay un **e
 (`Documentos` en la barra lateral) para navegar todo lo indexado como un árbol de archivos.
 
 La documentación vive **fuera de la app**, en una carpeta del sistema de archivos del host, montada de
-solo lectura en Docker. Mongo solo guarda el **índice** (metadatos + texto extraído de cada archivo),
-nunca el archivo en sí. El admin elige qué subcarpeta de esa carpeta montada está activa con el botón
-**«Vincular biblioteca»**, sin tocar Docker ni redesplegar.
+lectura/escritura en Docker. Mongo solo guarda el **índice** (metadatos + texto extraído de cada archivo),
+nunca el archivo en sí. Desde «Vincular biblioteca» el admin elige qué subcarpeta de esa carpeta montada
+está activa, y también puede **crear/renombrar/borrar carpetas y subir archivos** directamente ahí, todo
+sin tocar Docker ni redesplegar.
 
 **Multiusuario con roles** (sesión por cookie):
 - **Usuarios normales**: se dan de alta con **nombre + DNI, sin contraseña**; entran escribiendo solo su
@@ -34,11 +35,13 @@ Nada depende de APIs de pago.
 - MongoDB 7. Índice de texto en español sobre los documentos (`server/src/models.js`).
 
 ## Archivos clave
-- `server/src/library.js` – `LIBRARY_ROOT` (ruta montada en Docker, de solo lectura) y la biblioteca
+- `server/src/library.js` – `LIBRARY_ROOT` (ruta montada en Docker, de lectura/escritura) y la biblioteca
   **activa** (`AppConfig.libraryPath`, una subcarpeta relativa elegida con «Vincular biblioteca»).
   `safeResolve` evita salirse de la raíz montada (path traversal). `browseFolder` lista subcarpetas para
   el selector; `setActiveLibraryPath` cambia la carpeta activa (la siguiente pasada del indexador poda
-  solo los documentos que ya no están bajo la nueva carpeta).
+  solo los documentos que ya no están bajo la nueva carpeta). `createFolder`/`renameFolder`/`deleteFolder`
+  operan sobre cualquier ruta dentro de `LIBRARY_ROOT` (nunca sobre la raíz misma, protegida a propósito);
+  `saveUploadedFile` guarda el buffer que recibe `routes.js` desde `multer`.
 - `server/src/indexer.js` – `scanLibrary()` recorre la biblioteca activa (`fs.readdir` recursivo nativo,
   sin librería), extrae texto solo de lo nuevo/cambiado (compara `mtimeMs`/`size`) y borra de Mongo lo que
   ya no existe en disco. `scheduleIndexing()` lo lanza al arrancar y cada `SCAN_INTERVAL_MINUTES`.
@@ -63,6 +66,11 @@ Nada depende de APIs de pago.
     `blockedMessage`.
   - `GET /library`, `GET /library/browse?path=`, `POST /library/select`, `POST /library/reindex` (admin) –
     estado de la biblioteca y el selector «Vincular biblioteca».
+  - `POST /library/folders {path,name}`, `PATCH /library/folders {path,newName}`,
+    `DELETE /library/folders?path=` (admin) – crear/renombrar/borrar carpetas dentro de `LIBRARY_ROOT`;
+    cada operación relanza `scanLibrary()` para que el índice refleje el cambio al instante.
+  - `POST /library/upload` (admin, `multipart/form-data` con `multer`, campo `files` + `path`) – sube uno
+    o varios archivos a una carpeta y reindexa.
 - `server/src/models.js` – `Document {path, filename, ext, folder, topFolder, size, mtimeMs,
   extractedText, textOk}` (índice de texto en `filename`/`folder`/`extractedText`), `Group {name,
   folders: [String]}` (nombres de carpetas de primer nivel, no referencias), `FolderConfig {folder,
@@ -79,7 +87,10 @@ Nada depende de APIs de pago.
 - `client/src/Explorer.jsx` – árbol de carpetas construido en memoria a partir de `GET /documents` (filtro
   de texto en cliente, con `<details>` nativo para expandir/colapsar, sin JS de estado por nodo).
 - `client/src/LibraryPicker.jsx` – modal «Vincular biblioteca»: navega subcarpetas de `LIBRARY_ROOT`,
-  fija la activa, muestra el estado del índice y permite reindexar bajo demanda.
+  fija la activa, crea/renombra/borra carpetas (renombrar y borrar usan `prompt()`/`confirm()` nativos —
+  en pruebas automatizadas sin interacción real esos diálogos se cancelan solos, es una limitación del
+  navegador de pruebas, no un bug), sube archivos (`<input type="file" multiple>` + `FormData`), y muestra
+  el estado del índice con reindexado bajo demanda.
 - `client/src/Login.jsx` – un único campo DNI; si el servidor responde `needsPassword`, aparece el segundo
   campo de contraseña (solo le pasa al admin).
 - `client/src/Users.jsx` – alta nombre+DNI, botón «Importar .txt» (lee el archivo con `FileReader` en el
@@ -91,8 +102,11 @@ Nada depende de APIs de pago.
   navegador nunca puede devolverle al servidor una ruta absoluta del disco, y aunque pudiera, el
   contenedor no vería esa ruta sin montarla antes en Docker. Por eso «Vincular biblioteca» es un
   explorador propio dentro de la app, limitado a lo que ya está montado en `LIBRARY_ROOT`.
-- La carpeta base (`LIBRARY_ROOT`, vía `DOCS_HOST_PATH` en el host) se monta **una sola vez** al desplegar;
-  la subcarpeta activa dentro de ella se cambia en caliente con «Vincular biblioteca», sin tocar Docker.
+- La carpeta base (`LIBRARY_ROOT`, vía `DOCS_HOST_PATH` en el host) se monta **una sola vez** al desplegar,
+  de lectura/escritura; la subcarpeta activa, y las carpetas/archivos dentro de ella, se gestionan en
+  caliente desde «Vincular biblioteca», sin tocar Docker.
+- Subida de archivos con `multer` (`memoryStorage`, hasta 100 MB/archivo y 20 archivos por subida): es la
+  única dependencia nueva para esto que Express 5 no cubre por sí solo (no hay parser multipart nativo).
 - Búsqueda primero por coincidencia de texto (barata, instantánea); la IA es siempre un respaldo, nunca el
   camino por defecto, y solo reformula la pregunta en palabras clave — nunca redacta una respuesta sobre
   el contenido (evita alucinaciones y uso innecesario de IA).
@@ -131,9 +145,10 @@ Nada depende de APIs de pago.
   source: contains forbidden character '${'»), así que no se puede parametrizar la ruta del host ahí.
   En Coolify, el bind mount se añade desde la pestaña **Storages** del servicio `app`: «Source Path» = la
   carpeta del VPS con los documentos reales (fuera del repo, p. ej. `/data/documentos`), «Destination
-  Path» = `/app/library`, de solo lectura. Eso sí se puede cambiar desde el propio panel de Coolify sin
-  tocar código ni redesplegar. En local, `docker-compose.local.yml` sí declara el mount con
-  `DOCS_HOST_PATH` (ahí no aplica la restricción de Coolify).
+  Path» = `/app/library`, **de lectura/escritura** (la app necesita poder crear carpetas y subir archivos
+  ahí desde «Vincular biblioteca»). Eso sí se puede cambiar desde el propio panel de Coolify sin tocar
+  código ni redesplegar. En local, `docker-compose.local.yml` sí declara el mount con `DOCS_HOST_PATH`
+  (ahí no aplica la restricción de Coolify).
 - Requisitos del VPS: ~4 GB de RAM libre, 4 vCPU recomendados, ~8 GB de disco, CPU con AVX2.
 - Desplegado en Coolify: proyecto «NeuroRepo», app `neurorepo` (uuid `b11eclxarnaji4ewyx6ter6y`) →
   https://neurorepo.coolify.kaizencode.me. Redesplegar: `GET /api/v1/deploy?uuid=b11eclxarnaji4ewyx6ter6y`.

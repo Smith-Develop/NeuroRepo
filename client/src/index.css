@@ -123,7 +123,11 @@ details summary { cursor: pointer; color: var(--muted); font-size: .85rem; }
 /* ---------- Vincular biblioteca ---------- */
 .breadcrumbs { margin: 10px 0; font-size: .88rem; }
 .breadcrumbs button { font-size: inherit; }
-.folder-browser { list-style: none; margin: 0 0 14px; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 240px; overflow-y: auto; }
+.folder-browser { list-style: none; margin: 0 0 10px; padding: 0; display: flex; flex-direction: column; gap: 4px; max-height: 240px; overflow-y: auto; }
+.folder-row { display: flex; align-items: center; gap: 8px; }
+.folder-row .row-actions { margin-left: auto; display: flex; gap: 10px; font-size: .8rem; }
+.new-folder-row { display: flex; gap: 8px; margin-bottom: 14px; }
+.new-folder-row input { flex: 1; }
 
 /* ---------- Grupos / carpetas bloqueadas ---------- */
 .app-message-list { list-style: none; margin: 0 0 20px; padding: 0; display: flex; flex-direction: column; gap: 10px; }

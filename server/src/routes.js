@@ -1,11 +1,17 @@
 import { Router } from "express";
 import mongoose from "mongoose";
+import multer from "multer";
 import { Document, FolderConfig } from "./models.js";
 import { requireAdmin, allowedFolders } from "./auth.js";
 import { searchDocuments, topScore } from "./search.js";
 import { suggestKeywords } from "./ai.js";
-import { safeResolve, browseFolder, getActiveLibraryPath, setActiveLibraryPath, getAppConfig, LibraryPathError } from "./library.js";
+import {
+  safeResolve, browseFolder, getActiveLibraryPath, setActiveLibraryPath, getAppConfig, LibraryPathError,
+  createFolder, renameFolder, deleteFolder, saveUploadedFile,
+} from "./library.js";
 import { scanLibrary } from "./indexer.js";
+
+const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024, files: 20 } });
 
 const DEFAULT_BLOCKED_MESSAGE = "No tienes permiso para consultar esta carpeta. Pregunta al administrador.";
 const AI_FALLBACK_SCORE = Number(process.env.AI_FALLBACK_SCORE) || 0.3; // por debajo de esto, se intenta el respaldo de IA
@@ -136,6 +142,49 @@ r.post("/library/select", requireAdmin, wrap(async (req, res) => {
 r.post("/library/reindex", requireAdmin, wrap(async (req, res) => {
   const result = await scanLibrary();
   res.json({ ok: true, indexed: result?.count ?? 0 });
+}));
+
+// Gestión de carpetas y archivos dentro de la biblioteca (solo admin)
+r.post("/library/folders", requireAdmin, wrap(async (req, res) => {
+  try {
+    const rel = createFolder(text(req.body?.path, 2000), text(req.body?.name, 200));
+    await scanLibrary();
+    res.status(201).json({ path: rel });
+  } catch (e) {
+    res.status(400).json({ error: e instanceof LibraryPathError ? e.message : "No se pudo crear la carpeta." });
+  }
+}));
+
+r.patch("/library/folders", requireAdmin, wrap(async (req, res) => {
+  try {
+    const rel = renameFolder(text(req.body?.path, 2000), text(req.body?.newName, 200));
+    await scanLibrary();
+    res.json({ path: rel });
+  } catch (e) {
+    res.status(400).json({ error: e instanceof LibraryPathError ? e.message : "No se pudo renombrar la carpeta." });
+  }
+}));
+
+r.delete("/library/folders", requireAdmin, wrap(async (req, res) => {
+  try {
+    deleteFolder(text(req.query.path, 2000));
+    await scanLibrary();
+    res.status(204).end();
+  } catch (e) {
+    res.status(400).json({ error: e instanceof LibraryPathError ? e.message : "No se pudo borrar la carpeta." });
+  }
+}));
+
+r.post("/library/upload", requireAdmin, upload.array("files", 20), wrap(async (req, res) => {
+  const targetPath = text(req.body?.path, 2000);
+  if (!req.files?.length) return res.status(400).json({ error: "No se ha subido ningún archivo." });
+  try {
+    for (const file of req.files) saveUploadedFile(targetPath, file.originalname, file.buffer);
+  } catch (e) {
+    return res.status(400).json({ error: e instanceof LibraryPathError ? e.message : "No se pudo guardar el archivo." });
+  }
+  const result = await scanLibrary();
+  res.json({ ok: true, uploaded: req.files.length, indexed: result?.count ?? 0 });
 }));
 
 export default r;

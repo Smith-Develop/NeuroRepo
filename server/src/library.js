@@ -1,9 +1,10 @@
-import { mkdirSync, readdirSync, statSync } from "node:fs";
+import { mkdirSync, readdirSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { AppConfig } from "./models.js";
 
-// Carpeta montada en Docker (de solo lectura) desde el host: la base dentro de la cual se puede
-// elegir cualquier subcarpeta como biblioteca activa, sin volver a tocar Docker.
+// Carpeta montada en Docker (de lectura/escritura) desde el host: la base dentro de la cual se puede
+// elegir cualquier subcarpeta como biblioteca activa, crear/renombrar/borrar carpetas y subir archivos,
+// todo sin volver a tocar Docker.
 export const LIBRARY_ROOT = process.env.LIBRARY_ROOT || "/app/library";
 
 export class LibraryPathError extends Error {}
@@ -53,4 +54,50 @@ export function browseFolder(relPath = "") {
     .map((e) => e.name)
     .sort((a, b) => a.localeCompare(b));
   return { path: relPath || "", folders: entries };
+}
+
+const SAFE_NAME = /^[^/\\:*?"<>|]+$/; // sin separadores de ruta ni caracteres problemáticos en Windows/Linux
+
+function requireSafeName(name) {
+  if (!name || !SAFE_NAME.test(name) || name === "." || name === "..") {
+    throw new LibraryPathError("Nombre de carpeta no válido.");
+  }
+}
+
+// Crea una subcarpeta dentro de relPath (relativa a LIBRARY_ROOT)
+export function createFolder(relPath, name) {
+  requireSafeName(name);
+  const parent = safeResolve(LIBRARY_ROOT, relPath || "");
+  const dest = safeResolve(LIBRARY_ROOT, relPath ? `${relPath}/${name}` : name);
+  if (statSync(dest, { throwIfNoEntry: false })) throw new LibraryPathError("Ya existe una carpeta con ese nombre.");
+  mkdirSync(dest, { recursive: true });
+  return path.relative(LIBRARY_ROOT, dest).split(path.sep).join("/");
+}
+
+// Renombra una carpeta (no la raíz) dentro de LIBRARY_ROOT
+export function renameFolder(relPath, newName) {
+  if (!relPath) throw new LibraryPathError("No se puede renombrar la raíz de la biblioteca.");
+  requireSafeName(newName);
+  const abs = safeResolve(LIBRARY_ROOT, relPath);
+  const dest = safeResolve(LIBRARY_ROOT, `${path.dirname(relPath) === "." ? "" : `${path.dirname(relPath)}/`}${newName}`);
+  if (statSync(dest, { throwIfNoEntry: false })) throw new LibraryPathError("Ya existe una carpeta con ese nombre.");
+  renameSync(abs, dest);
+  return path.relative(LIBRARY_ROOT, dest).split(path.sep).join("/");
+}
+
+// Borra una carpeta (no la raíz) y todo su contenido, dentro de LIBRARY_ROOT
+export function deleteFolder(relPath) {
+  if (!relPath) throw new LibraryPathError("No se puede borrar la raíz de la biblioteca.");
+  const abs = safeResolve(LIBRARY_ROOT, relPath);
+  rmSync(abs, { recursive: true, force: true });
+}
+
+// Guarda un archivo subido dentro de relFolder (relativa a LIBRARY_ROOT)
+export function saveUploadedFile(relFolder, filename, buffer) {
+  requireSafeName(filename);
+  const dir = safeResolve(LIBRARY_ROOT, relFolder || "");
+  mkdirSync(dir, { recursive: true });
+  const dest = safeResolve(LIBRARY_ROOT, relFolder ? `${relFolder}/${filename}` : filename);
+  writeFileSync(dest, buffer);
+  return path.relative(LIBRARY_ROOT, dest).split(path.sep).join("/");
 }
