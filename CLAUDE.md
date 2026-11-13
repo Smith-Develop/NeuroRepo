@@ -68,7 +68,8 @@ Nada depende de APIs de pago.
 ## Despliegue (Coolify)
 - `docker-compose.yml` está preparado para Coolify (`SERVICE_FQDN_APP_4000`, sin puertos publicados).
 - Requisitos del VPS: ~4 GB de RAM libre, 4 vCPU recomendados, ~8 GB de disco, CPU con AVX2. Comprobar con `free -h && nproc && df -h /` antes de desplegar.
-- Pendiente: crear el recurso en Coolify y definir `APP_PASSWORD`.
+- Desplegado en Coolify: proyecto «NeuroRepo», app `neurorepo` (uuid `b11eclxarnaji4ewyx6ter6y`, build pack dockercompose, GitHub App `smith-develop`, rama `main`) → https://neurorepo.coolify.kaizencode.me. Variables en Coolify: `APP_USER`, `APP_PASSWORD`, `OLLAMA_MODEL`. Redesplegar: `GET /api/v1/deploy?uuid=b11eclxarnaji4ewyx6ter6y`.
+- En la VPS un borrador de la IA tarda ~8-13 s. MongoDB limitado a 0,25 GB de caché y Ollama a 4 GB de RAM (`docker-compose.yml`) para compartir el servidor.
 
 ## Estilo
 - Código y comentarios en español en la UI/prompts; nombres de variables en inglés.
