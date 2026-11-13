@@ -21,7 +21,7 @@ export default function Chat({ user, scenarios, notes, onSaved, onSearch, onShow
   const isAdmin = user.role === "admin";
   const [messages, setMessages] = useState([isAdmin ? WELCOME_ADMIN : WELCOME_USER]);
   const [input, setInput] = useState("");
-  const [mode, setMode] = useState("learn");
+  const [mode, setMode] = useState("search");
   const [busy, setBusy] = useState(false);
   const endRef = useRef(null);
   const inputRef = useRef(null);
@@ -67,7 +67,7 @@ export default function Chat({ user, scenarios, notes, onSaved, onSearch, onShow
       replace(reply, { kind: "error", text: err.message });
     } finally {
       setBusy(false);
-      setMode("learn");
+      setMode("search");
     }
   }
 
