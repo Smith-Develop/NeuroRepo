@@ -63,13 +63,14 @@ Nada depende de APIs de pago.
 - Docker local: `docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build` → http://localhost:4000. `APP_PASSWORD` (+ `APP_USER`, por defecto `admin`) crea el primer admin la primera vez que arranca con la base vacía de usuarios; después esas variables ya no hacen falta (la contraseña vive hasheada en Mongo).
 - Desarrollo: `ollama pull qwen2.5:3b`, MongoDB en marcha, `cd server && cp .env.example .env && npm run dev`, `cd client && npm run dev` → http://localhost:5173 (Vite hace proxy de `/api` a :4000). El login necesita que el backend real esté arriba (usa cookies, no hay forma de simular la sesión aparte).
 - Comprobaciones rápidas: `node --check server/src/*.js`, `cd client && npm run build`. No hay tests automatizados todavía.
-- Pendientes conocidos: paginar `GET /notes` si pasa de ~2000 hojas, guardar el historial del chat, no hay "recuperar contraseña" ni edición de usuarios (solo crear/borrar).
+- Pendientes conocidos: paginar `GET /notes` si pasa de ~2000 hojas, guardar el historial del chat.
 
 ## Despliegue (Coolify)
 - `docker-compose.yml` está preparado para Coolify (`SERVICE_FQDN_APP_4000`, sin puertos publicados).
 - Requisitos del VPS: ~4 GB de RAM libre, 4 vCPU recomendados, ~8 GB de disco, CPU con AVX2. Comprobar con `free -h && nproc && df -h /` antes de desplegar.
 - Desplegado en Coolify: proyecto «NeuroRepo», app `neurorepo` (uuid `b11eclxarnaji4ewyx6ter6y`, build pack dockercompose, GitHub App `smith-develop`, rama `main`) → https://neurorepo.coolify.kaizencode.me. Variables en Coolify: `APP_USER`, `APP_PASSWORD`, `OLLAMA_MODEL`. Redesplegar: `GET /api/v1/deploy?uuid=b11eclxarnaji4ewyx6ter6y`.
 - En la VPS un borrador de la IA tarda ~8-13 s. MongoDB limitado a 0,25 GB de caché y Ollama a 4 GB de RAM (`docker-compose.yml`) para compartir el servidor.
+- `scripts/seed-apps.mjs` vuelca de una vez todas las apps/casuísticas reales en una instalación nueva (p. ej. recién desplegada en Coolify, con la base de Mongo vacía). Lee `scripts/data/aplicaciones.json` (exportado de `GET /notes`), que **no está en git** (`.gitignore`) porque trae nombres y correos reales de personal en las observaciones; se guarda solo en local. Uso: `BASE_URL=https://tu-dominio APP_PASSWORD=... node scripts/seed-apps.mjs`. Pensado para una base vacía: si se ejecuta dos veces duplica las notas.
 
 ## Estilo
 - Código y comentarios en español en la UI/prompts; nombres de variables en inglés.
