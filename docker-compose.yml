@@ -16,6 +16,8 @@ services:
 
   mongo:
     image: mongo:7
+    # Caché pequeña: por defecto Mongo reserva ~50% de la RAM del servidor
+    command: ["--wiredTigerCacheSizeGB", "0.25"]
     volumes: [mongo-data:/data/db]
     restart: unless-stopped
 
@@ -25,6 +27,7 @@ services:
     volumes: [ollama-data:/root/.ollama]
     environment:
       - OLLAMA_KEEP_ALIVE=24h # mantiene el modelo cargado en RAM
+    mem_limit: 4g # tope para no ahogar al resto de apps del servidor
     restart: unless-stopped
 
   # Descarga el modelo la primera vez (~2 GB) y termina
