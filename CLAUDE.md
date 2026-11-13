@@ -137,6 +137,29 @@ Nada depende de APIs de pago.
 - Pendientes conocidos: sin vista previa en línea de Word/Excel (solo descarga); sin recuperación de
   contraseña del admin; `GET /documents` sin paginar si la biblioteca pasa de ~5000 archivos.
 
+## Instalador para Windows (`instalar.ps1` / `Instalar.bat`)
+Pensado para pasarle la carpeta del proyecto a alguien sin conocimientos técnicos (p. ej. para usarlo
+en la red interna de una oficina, sin VPS): doble clic en `Instalar.bat` (lanza `instalar.ps1`, que se
+autoeleva a administrador si hace falta).
+- Si no encuentra `docker` en el PATH: lo descarga e instala en silencio (`Docker Desktop
+  Installer.exe install --quiet --accept-license`), programa con `schtasks` (`/SC ONLOGON /RL
+  HIGHEST`) que el propio script se vuelva a lanzar solo al iniciar sesión, y reinicia el equipo
+  (Docker lo exige para terminar de activar WSL2/virtualización). Tras el reinicio, la tarea
+  programada relanza el script, que retoma donde lo dejó; la tarea se borra en cuanto Docker
+  responde (`docker info`), para no relanzarse en cada inicio de sesión futuro.
+- Si Docker ya está instalado pero el servicio no está arriba, arranca `Docker Desktop.exe` y
+  espera (hasta ~5 min) a que `docker info` responda.
+- Pide por consola (`Read-Host`) todo lo que antes iba a mano en `.env`: nombre y DNI del admin, su
+  contraseña (oculta, vía `-AsSecureString`), la ruta de la carpeta de documentos (la crea si no
+  existe), el modelo de Ollama y el intervalo de reindexado; si ya hay un `.env`, pregunta si se
+  quiere reconfigurar o reutilizar el que esté.
+- Abre el puerto 4000 en el Firewall de Windows (`New-NetFirewallRule`) para que se pueda compartir
+  en la red local, y al final levanta el stack con `docker compose -f docker-compose.yml -f
+  docker-compose.local.yml up -d --build` y muestra la IP de la máquina para pasarle la URL a los
+  compañeros (`http://<ip-lan>:4000`).
+- No sustituye a Docker Compose ni cambia nada de la arquitectura: es solo una capa de conveniencia
+  sobre el mismo `docker-compose.yml`/`docker-compose.local.yml` que ya se usa en local y en Coolify.
+
 ## Despliegue (Coolify)
 - `docker-compose.yml` está preparado para Coolify (`SERVICE_FQDN_APP_4000`, sin puertos publicados).
   Necesita `BOOTSTRAP_ADMIN_DNI`/`BOOTSTRAP_ADMIN_PASSWORD` como variables de entorno.
