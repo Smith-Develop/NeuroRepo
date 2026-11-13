@@ -1,7 +1,7 @@
 import { Router } from "express";
 import mongoose from "mongoose";
 import { User, Session, Suggestion, Group } from "./models.js";
-import { hashPassword, verifyPassword, createSession, setSessionCookie, clearSessionCookie, requireAuth, requireAdmin } from "./auth.js";
+import { hashPassword, verifyPassword, createSession, setSessionCookie, clearSessionCookie, requireAuth, requireAdmin, sessionToken } from "./auth.js";
 
 const r = Router();
 const wrap = (fn) => (req, res, next) => fn(req, res).catch(next);
@@ -53,6 +53,22 @@ r.patch("/users/:id", requireAdmin, wrap(async (req, res) => {
   const user = await User.findOneAndUpdate({ _id: req.params.id, role: "user" }, update, { returnDocument: "after" })
     .select("username role group").populate("group", "name");
   user ? res.json(user) : res.status(404).end();
+}));
+
+// Resetear contraseña (admin, para cualquier usuario incluido él mismo).
+// Cierra las sesiones abiertas de ese usuario, salvo la sesión desde la que se hace el cambio.
+r.post("/users/:id/password", requireAdmin, wrap(async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).end();
+  const password = typeof req.body?.password === "string" ? req.body.password : "";
+  if (password.trim().length < 4 || password.length > 200) {
+    return res.status(400).json({ error: "La contraseña debe tener entre 4 y 200 caracteres." });
+  }
+  const user = await User.findById(req.params.id);
+  if (!user) return res.status(404).end();
+  user.passwordHash = hashPassword(password.trim());
+  await user.save();
+  const { deletedCount } = await Session.deleteMany({ user: user._id, _id: { $ne: sessionToken(req) } });
+  res.json({ ok: true, closedSessions: deletedCount });
 }));
 
 r.delete("/users/:id", requireAdmin, wrap(async (req, res) => {

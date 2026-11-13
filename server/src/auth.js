@@ -27,6 +27,9 @@ function parseCookies(header = "") {
   );
 }
 
+// Token de la sesión actual (cookie "sid"), o undefined
+export const sessionToken = (req) => parseCookies(req.headers.cookie)[COOKIE_NAME];
+
 export async function createSession(user) {
   const token = randomBytes(32).toString("hex");
   const expiresAt = new Date(Date.now() + SESSION_DAYS * 24 * 60 * 60 * 1000);
