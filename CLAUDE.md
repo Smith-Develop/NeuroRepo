@@ -125,13 +125,20 @@ Nada depende de APIs de pago.
 
 ## Despliegue (Coolify)
 - `docker-compose.yml` está preparado para Coolify (`SERVICE_FQDN_APP_4000`, sin puertos publicados).
-  Necesita `DOCS_HOST_PATH` (carpeta del VPS con los documentos reales, fuera del repo) y
-  `BOOTSTRAP_ADMIN_DNI`/`BOOTSTRAP_ADMIN_PASSWORD` como variables de entorno.
+  Necesita `BOOTSTRAP_ADMIN_DNI`/`BOOTSTRAP_ADMIN_PASSWORD` como variables de entorno.
+- **La carpeta de documentos NO se declara en `docker-compose.yml`** (ese archivo no lleva ningún bind
+  mount para `/app/library`): Coolify prohíbe `${...}` en el origen de un volumen («Invalid volume
+  source: contains forbidden character '${'»), así que no se puede parametrizar la ruta del host ahí.
+  En Coolify, el bind mount se añade desde la pestaña **Storages** del servicio `app`: «Source Path» = la
+  carpeta del VPS con los documentos reales (fuera del repo, p. ej. `/data/documentos`), «Destination
+  Path» = `/app/library`, de solo lectura. Eso sí se puede cambiar desde el propio panel de Coolify sin
+  tocar código ni redesplegar. En local, `docker-compose.local.yml` sí declara el mount con
+  `DOCS_HOST_PATH` (ahí no aplica la restricción de Coolify).
 - Requisitos del VPS: ~4 GB de RAM libre, 4 vCPU recomendados, ~8 GB de disco, CPU con AVX2.
 - Desplegado en Coolify: proyecto «NeuroRepo», app `neurorepo` (uuid `b11eclxarnaji4ewyx6ter6y`) →
   https://neurorepo.coolify.kaizencode.me. Redesplegar: `GET /api/v1/deploy?uuid=b11eclxarnaji4ewyx6ter6y`.
   **Pendiente**: el pivote a gestor documental todavía no se ha desplegado ahí (solo probado en local); al
-  hacerlo, hay que decidir y montar `DOCS_HOST_PATH` en el VPS antes del primer arranque.
+  hacerlo, hay que crear el Storage de `/app/library` en Coolify antes del primer arranque.
 
 ## Estilo
 - Código y comentarios en español en la UI/prompts; nombres de variables en inglés.

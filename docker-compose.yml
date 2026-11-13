@@ -4,10 +4,10 @@ services:
     depends_on:
       mongo: { condition: service_started }
       model: { condition: service_completed_successfully }
-    volumes:
-      # Carpeta del host con los documentos (una vez montada, la subcarpeta activa se elige
-      # desde el propio panel de admin con "Vincular biblioteca", sin tocar Docker)
-      - ${DOCS_HOST_PATH:?Define DOCS_HOST_PATH (carpeta del host con los documentos)}:/app/library:ro
+    # La carpeta de documentos del host se monta en /app/library (solo lectura).
+    # Coolify prohíbe "${...}" en el origen de un volumen (por seguridad), así que aquí NO se
+    # declara el bind mount: en Coolify se añade desde Storages del propio servicio (ver CLAUDE.md).
+    # En local, docker-compose.local.yml sí lo declara con DOCS_HOST_PATH.
     environment:
       # Coolify: crea el dominio y enruta al puerto 4000
       - SERVICE_FQDN_APP_4000
