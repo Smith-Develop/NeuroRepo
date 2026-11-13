@@ -112,13 +112,38 @@ details summary { cursor: pointer; color: var(--muted); font-size: .85rem; }
 .doc-actions { flex: none; display: flex; gap: 6px; align-self: center; }
 .doc-actions a { font-size: .8rem; }
 
-/* ---------- Explorador de documentos (árbol de carpetas) ---------- */
+/* ---------- Explorador de documentos (árbol de carpetas / tarjetas) ---------- */
 .explorer { max-width: 820px; }
+.explorer-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.explorer-head h1 { margin: 0; }
+.view-toggle { display: flex; gap: 6px; margin-bottom: 16px; }
+.view-toggle button { background: transparent; color: var(--muted); border: 1px solid var(--line); padding: 4px 12px; font-size: .82rem; }
+.view-toggle button.on { background: var(--panel-2); color: var(--text); border-color: var(--accent); }
 .explorer-filter { margin-bottom: 14px; }
 .doc-folder { margin: 4px 0; }
 .doc-folder > summary { cursor: pointer; padding: 6px 4px; color: var(--text); font-size: .92rem; list-style: revert; }
 .doc-folder > summary small { color: var(--muted); }
 .doc-folder-body { margin-left: 18px; padding-left: 10px; border-left: 1px solid var(--line); }
+
+/* Vista de tarjetas tipo Windows: cuadrícula de iconos grandes */
+.doc-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 10px; margin-top: 4px; }
+.doc-tile {
+  position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px;
+  background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 14px 8px 10px;
+  cursor: pointer; text-align: center; color: var(--text); font: inherit;
+}
+.doc-tile:hover, .doc-tile:focus-visible { border-color: var(--accent); }
+.doc-tile-icon { font-size: 2rem; line-height: 1; }
+.doc-tile-name { font-size: .78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
+.doc-tile-meta { font-size: .7rem; color: var(--muted); }
+.doc-tile-dl {
+  position: absolute; top: 4px; right: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
+  width: 20px; height: 20px; display: flex; align-items: center; justify-content: center; font-size: .72rem;
+  color: var(--muted); opacity: 0; transition: opacity .15s;
+}
+.doc-tile:hover .doc-tile-dl, .doc-tile:focus-within .doc-tile-dl { opacity: 1; }
+.doc-tile-folder { background: var(--panel-2); }
+.doc-tile-folder .doc-tile-icon { color: #facc15; }
 
 /* ---------- Vincular biblioteca ---------- */
 .breadcrumbs { margin: 10px 0; font-size: .88rem; }

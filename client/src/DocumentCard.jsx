@@ -1,10 +1,10 @@
 import { api } from "./api";
 
 const ICONS = { ".pdf": "📕", ".doc": "📘", ".docx": "📘", ".xls": "📗", ".xlsx": "📗", ".csv": "📗", ".txt": "📄", ".md": "📄" };
-const INLINE = new Set([".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"]);
-const iconFor = (ext) => ICONS[ext] || "📎";
+export const INLINE = new Set([".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".svg"]);
+export const iconFor = (ext) => ICONS[ext] || "📎";
 
-function formatSize(bytes) {
+export function formatSize(bytes) {
   if (!bytes) return "";
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
