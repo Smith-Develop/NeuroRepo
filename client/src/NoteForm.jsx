@@ -1,5 +1,5 @@
 import { useId, useMemo, useState } from "react";
-import StepsEditor from "./StepsEditor";
+import FlowchartEditor from "./FlowchartEditor";
 
 // Formulario para revisar/corregir lo que propuso la IA (o editar una nota guardada)
 export default function NoteForm({ initial, scenarios, notes = [], submitLabel, cancelLabel = "Descartar", onSubmit, onCancel, busy }) {
@@ -77,7 +77,7 @@ export default function NoteForm({ initial, scenarios, notes = [], submitLabel, 
       <datalist id={`${id}-cat-list`}>{categories.map((c) => <option key={c} value={c} />)}</datalist>
 
       <label>Procedimiento <small>(diagrama de flujo, opcional)</small></label>
-      <StepsEditor value={steps} onChange={setSteps} />
+      <FlowchartEditor value={steps} onChange={setSteps} />
 
       <label htmlFor={`${id}-rel`}>Depende de <small>(otras casuísticas, de esta app o de otra)</small></label>
       <div className="rel-add">

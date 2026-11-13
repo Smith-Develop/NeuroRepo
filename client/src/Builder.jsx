@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import StepsEditor from "./StepsEditor";
+import FlowchartEditor from "./FlowchartEditor";
 
 // Piezas disponibles. title y scenario son obligatorias para poder guardar, pero se
 // construyen igual que las demás: hay que arrastrarlas a la zona de construcción.
@@ -69,7 +69,7 @@ function PieceBlock({ pieceKey, value, onChange, onRemove, scenarios, notes }) {
       {pieceKey === "category" && <input value={value} onChange={(e) => onChange(e.target.value)} maxLength={80} placeholder="p. ej. Errores, Usuarios…" />}
       {pieceKey === "tags" && <input value={value} onChange={(e) => onChange(e.target.value)} placeholder="Separadas por comas" />}
       {pieceKey === "related" && <RelatedPicker notes={notes} value={value} onChange={onChange} />}
-      {pieceKey === "steps" && <StepsEditor value={value} onChange={onChange} />}
+      {pieceKey === "steps" && <FlowchartEditor value={value} onChange={onChange} />}
     </div>
   );
 }

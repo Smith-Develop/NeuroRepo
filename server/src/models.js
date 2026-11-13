@@ -22,6 +22,7 @@ const stepSchema = new mongoose.Schema(
   {
     type: { type: String, enum: ["inicio", "paso", "decision", "fin"], required: true },
     text: { type: String, required: true, trim: true },
+    yesTarget: { type: Number }, // solo en "decision": índice del paso al que salta si la respuesta es "Sí"
     noTarget: { type: Number }, // solo en "decision": índice del paso al que salta si la respuesta es "No"
   },
   { _id: false },

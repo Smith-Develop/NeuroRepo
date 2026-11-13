@@ -56,10 +56,13 @@ function validateSteps(raw) {
     const t = text(s?.text, 300);
     if (!t) return;
     oldToNew.set(i, kept.length);
-    kept.push({ type: VALID_TYPES.has(s?.type) ? s.type : "paso", text: t, noTargetRaw: s?.noTarget });
+    kept.push({ type: VALID_TYPES.has(s?.type) ? s.type : "paso", text: t, yesTargetRaw: s?.yesTarget, noTargetRaw: s?.noTarget });
   });
-  return kept.map(({ noTargetRaw, ...s }) => {
-    if (s.type === "decision" && Number.isInteger(noTargetRaw) && oldToNew.has(noTargetRaw)) s.noTarget = oldToNew.get(noTargetRaw);
+  return kept.map(({ yesTargetRaw, noTargetRaw, ...s }) => {
+    if (s.type === "decision") {
+      if (Number.isInteger(yesTargetRaw) && oldToNew.has(yesTargetRaw)) s.yesTarget = oldToNew.get(yesTargetRaw);
+      if (Number.isInteger(noTargetRaw) && oldToNew.has(noTargetRaw)) s.noTarget = oldToNew.get(noTargetRaw);
+    }
     return s;
   });
 }

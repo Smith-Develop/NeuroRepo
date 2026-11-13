@@ -196,19 +196,14 @@ details summary { cursor: pointer; color: var(--muted); font-size: .85rem; }
   box-shadow: 0 6px 18px rgba(0, 0, 0, .45); opacity: .95;
 }
 
-/* ---------- Editor de procedimiento (StepsEditor) ---------- */
-.steps-editor { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 8px; }
-.step-row { display: grid; grid-template-columns: 20px auto 1fr auto; gap: 6px; align-items: center; }
-.step-row select { width: auto; min-width: 90px; }
-.step-num { color: var(--muted); font-size: .78rem; text-align: center; }
-.step-actions { display: flex; gap: 2px; }
-.step-actions button { padding: 2px 6px; }
-
 /* ---------- Diagrama de flujo (Flowchart, solo lectura) ---------- */
-.flowchart { width: 100%; max-width: 460px; display: block; margin: 12px auto 4px; }
+.flowchart { width: 100%; max-width: 480px; display: block; margin: 12px auto 4px; }
 .fc-line { stroke: var(--line); stroke-width: 1.5; fill: none; }
+.fc-yes { stroke: #4ade80; }
 .fc-no { stroke: #facc15; stroke-dasharray: 4 3; }
+.fc-temp { stroke-dasharray: 3 3; opacity: .8; }
 .fc-branch-label { font-size: 11px; fill: var(--muted); }
+.fc-branch-label.yes { fill: #4ade80; }
 .fc-branch-label.no { fill: #facc15; }
 .fc-step rect, .fc-step polygon { fill: var(--panel-2); stroke: var(--line); stroke-width: 1.5; }
 .fc-inicio rect, .fc-fin rect { fill: #4ade8022; stroke: #4ade80; }
@@ -216,6 +211,36 @@ details summary { cursor: pointer; color: var(--muted); font-size: .85rem; }
 .fc-text {
   width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; text-align: center;
   padding: 4px 12px; font-size: 12px; line-height: 1.25; color: var(--text); box-sizing: border-box;
+}
+
+/* ---------- Constructor visual del procedimiento (FlowchartEditor) ---------- */
+.fc-editor { margin: 4px 0 8px; }
+.fc-palette { display: flex; flex-wrap: wrap; gap: 8px; margin: 6px 0 10px; }
+.fc-chip {
+  padding: 8px 14px; border-radius: 6px; font-size: .82rem; font-weight: 600; color: #111; cursor: grab;
+  touch-action: none; user-select: none; box-shadow: 0 3px 0 rgba(0, 0, 0, .3);
+}
+.fc-chip-inicio, .fc-chip-fin { background: #4ade80; }
+.fc-chip-paso { background: #7aa2ff; }
+.fc-chip-decision { background: #facc15; }
+.fc-canvas { touch-action: none; }
+.fc-canvas .fc-step { cursor: grab; }
+.fc-text-wrap { width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; gap: 3px; padding: 4px 8px; box-sizing: border-box; }
+.fc-text-wrap select { padding: 1px 4px; font-size: 10px; height: 20px; border-radius: 4px; }
+.fc-text-wrap input { padding: 2px 6px; font-size: 11px; height: 22px; border-radius: 4px; }
+.fc-del { fill: var(--panel); stroke: var(--line); cursor: pointer; }
+.fc-del-x { fill: var(--muted); font-size: 12px; cursor: pointer; }
+.fc-handle { fill: var(--panel-2); stroke: var(--muted); stroke-width: 1.5; cursor: crosshair; }
+.fc-handle.yes { stroke: #4ade80; }
+.fc-handle.no { stroke: #facc15; }
+.fc-handle-clear { fill: var(--danger); cursor: pointer; }
+.fc-handle-label { font-size: 10px; fill: var(--muted); }
+.fc-handle-label.yes { fill: #4ade80; }
+.fc-handle-label.no { fill: #facc15; }
+.fc-ghost {
+  position: fixed; top: -20px; left: -20px; transform: translate(-9999px, -9999px); pointer-events: none; z-index: 60;
+  background: var(--panel-2); border: 1px solid var(--line); color: var(--text); font-size: .8rem; font-weight: 600;
+  padding: 6px 12px; border-radius: 6px; box-shadow: 0 6px 18px rgba(0, 0, 0, .45);
 }
 
 /* ---------- Grupos / apps bloqueadas ---------- */
