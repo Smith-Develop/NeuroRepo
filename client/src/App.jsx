@@ -6,6 +6,7 @@ import Login from "./Login";
 import Sidebar from "./Sidebar";
 import Users from "./Users";
 import Groups from "./Groups";
+import ActivityLog from "./ActivityLog";
 import LibraryPicker from "./LibraryPicker";
 
 export default function App() {
@@ -49,6 +50,7 @@ export default function App() {
         {view === "documentos" && <Explorer documents={documents} />}
         {view === "usuarios" && user.role === "admin" && <Users />}
         {view === "grupos" && user.role === "admin" && <Groups />}
+        {view === "registro" && user.role === "admin" && <ActivityLog />}
         {error && <p className="error toast" role="alert" onClick={() => setError("")}>{error}</p>}
       </main>
 

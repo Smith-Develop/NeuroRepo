@@ -63,9 +63,22 @@ const sessionSchema = new mongoose.Schema({
 });
 sessionSchema.index({ expiresAt: 1 }, { expireAfterSeconds: 0 }); // Mongo borra solas las caducadas
 
+// Quién añadió, editó o borró qué: solo lo ve el admin, desde "Registro"
+const activityLogSchema = new mongoose.Schema(
+  {
+    actorName: { type: String, required: true },
+    actorDni: { type: String, required: true },
+    action: { type: String, required: true }, // p. ej. "document.upload", "user.delete"
+    target: { type: String, default: "" }, // descripción legible de sobre qué actuó
+  },
+  { timestamps: true },
+);
+activityLogSchema.index({ createdAt: -1 });
+
 export const Document = mongoose.model("Document", documentSchema);
 export const Group = mongoose.model("Group", groupSchema);
 export const FolderConfig = mongoose.model("FolderConfig", folderConfigSchema);
 export const AppConfig = mongoose.model("AppConfig", appConfigSchema);
 export const User = mongoose.model("User", userSchema);
 export const Session = mongoose.model("Session", sessionSchema);
+export const ActivityLog = mongoose.model("ActivityLog", activityLogSchema);

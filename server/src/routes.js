@@ -10,6 +10,7 @@ import {
   createFolder, renameFolder, deleteFolder, saveUploadedFile,
 } from "./library.js";
 import { scanLibrary } from "./indexer.js";
+import { logActivity } from "./activityLog.js";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024, files: 20 } });
 
@@ -111,6 +112,7 @@ r.patch("/folders/:name", requireAdmin, wrap(async (req, res) => {
   const folder = text(req.params.name, 200);
   const blockedMessage = text(req.body?.blockedMessage, 300);
   const cfg = await FolderConfig.findOneAndUpdate({ folder }, { blockedMessage }, { upsert: true, returnDocument: "after" });
+  await logActivity(req, "folder.blocked-message", folder);
   res.json(cfg);
 }));
 
@@ -130,12 +132,14 @@ r.get("/library/browse", requireAdmin, wrap(async (req, res) => {
 }));
 
 r.post("/library/select", requireAdmin, wrap(async (req, res) => {
+  const requested = text(req.body?.path, 2000);
   try {
-    await setActiveLibraryPath(text(req.body?.path, 2000));
+    await setActiveLibraryPath(requested);
   } catch (e) {
     return res.status(400).json({ error: e instanceof LibraryPathError ? e.message : "Ruta inválida." });
   }
   const result = await scanLibrary();
+  await logActivity(req, "library.select", `/${requested}`);
   res.json({ ok: true, indexed: result?.count ?? 0 });
 }));
 
@@ -149,6 +153,7 @@ r.post("/library/folders", requireAdmin, wrap(async (req, res) => {
   try {
     const rel = createFolder(text(req.body?.path, 2000), text(req.body?.name, 200));
     await scanLibrary();
+    await logActivity(req, "folder.create", `/${rel}`);
     res.status(201).json({ path: rel });
   } catch (e) {
     res.status(400).json({ error: e instanceof LibraryPathError ? e.message : "No se pudo crear la carpeta." });
@@ -157,8 +162,10 @@ r.post("/library/folders", requireAdmin, wrap(async (req, res) => {
 
 r.patch("/library/folders", requireAdmin, wrap(async (req, res) => {
   try {
-    const rel = renameFolder(text(req.body?.path, 2000), text(req.body?.newName, 200));
+    const from = text(req.body?.path, 2000);
+    const rel = renameFolder(from, text(req.body?.newName, 200));
     await scanLibrary();
+    await logActivity(req, "folder.rename", `/${from} → /${rel}`);
     res.json({ path: rel });
   } catch (e) {
     res.status(400).json({ error: e instanceof LibraryPathError ? e.message : "No se pudo renombrar la carpeta." });
@@ -167,8 +174,10 @@ r.patch("/library/folders", requireAdmin, wrap(async (req, res) => {
 
 r.delete("/library/folders", requireAdmin, wrap(async (req, res) => {
   try {
-    deleteFolder(text(req.query.path, 2000));
+    const target = text(req.query.path, 2000);
+    deleteFolder(target);
     await scanLibrary();
+    await logActivity(req, "folder.delete", `/${target}`);
     res.status(204).end();
   } catch (e) {
     res.status(400).json({ error: e instanceof LibraryPathError ? e.message : "No se pudo borrar la carpeta." });
@@ -180,6 +189,7 @@ r.post("/library/upload", requireAdmin, upload.array("files", 20), wrap(async (r
   if (!req.files?.length) return res.status(400).json({ error: "No se ha subido ningún archivo." });
   try {
     for (const file of req.files) saveUploadedFile(targetPath, file.originalname, file.buffer);
+    await logActivity(req, "document.upload", `/${targetPath}: ${req.files.map((f) => f.originalname).join(", ")}`);
   } catch (e) {
     return res.status(400).json({ error: e instanceof LibraryPathError ? e.message : "No se pudo guardar el archivo." });
   }

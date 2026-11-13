@@ -5,6 +5,7 @@ const ITEMS = [
 const ADMIN_ITEMS = [
   { id: "usuarios", label: "Usuarios", icon: "👥" },
   { id: "grupos", label: "Grupos", icon: "🔒" },
+  { id: "registro", label: "Registro", icon: "🧾" },
 ];
 
 export default function Sidebar({ user, view, onNavigate, onLogout, onOpenLibrary }) {
