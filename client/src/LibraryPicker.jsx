@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { toast } from "./toast";
-import { EditIcon, FolderIcon, RefreshIcon, TrashIcon, UploadIcon } from "./icons";
+import { FolderIcon } from "./icons";
 
 const join = (base, name) => (base ? `${base}/${name}` : name);
 
@@ -117,49 +117,46 @@ export default function LibraryPicker({ onClose }) {
     <div className="modal-backdrop" onClick={onClose}>
       <aside className="drawer" aria-label="Vincular biblioteca" onClick={(e) => e.stopPropagation()}>
         <button className="close" onClick={onClose} aria-label="Cerrar">×</button>
-        <div className="drawer-inner">
-          <h2>Vincular biblioteca</h2>
-          {status && (
-            <div className="status-box">
-              <div><small>Carpeta activa</small><b>/{status.libraryPath || ""}</b></div>
-              <div><small>Indexados</small><b>{status.totalDocuments}</b></div>
-              <div><small>Última sync</small><b>{status.lastScanAt ? new Date(status.lastScanAt).toLocaleString() : "—"}</b></div>
-            </div>
-          )}
-          {error && <p className="error" role="alert">{error}</p>}
-          {notice && <p className="notice" role="status">{notice}</p>}
+        <h2>Vincular biblioteca</h2>
+        {status && (
+          <p className="status-line">
+            Carpeta activa: <strong>/{status.libraryPath || ""}</strong> · {status.totalDocuments} documento(s) indexados
+            {status.lastScanAt ? ` · última reindexación: ${new Date(status.lastScanAt).toLocaleString()}` : ""}
+          </p>
+        )}
+        {error && <p className="error" role="alert">{error}</p>}
+        {notice && <p className="notice" role="status">{notice}</p>}
 
-          <div className="breadcrumbs">
-            <button type="button" className="link" onClick={() => browse("")}>raíz</button>
-            {crumbs.map((c, i) => (
-              <span key={i}> / <button type="button" className="link" onClick={() => browse(crumbs.slice(0, i + 1).join("/"))}>{c}</button></span>
-            ))}
-          </div>
+        <div className="breadcrumbs">
+          <button type="button" className="link" onClick={() => browse("")}>raíz</button>
+          {crumbs.map((c, i) => (
+            <span key={i}> / <button type="button" className="link" onClick={() => browse(crumbs.slice(0, i + 1).join("/"))}>{c}</button></span>
+          ))}
+        </div>
 
-          <ul className="folder-browser">
-            {folders.length === 0 && <li className="hint">Sin subcarpetas aquí.</li>}
-            {folders.map((name) => (
-              <li key={name} className="folder-row">
-                <button type="button" className="ghost small" onClick={() => browse(join(path, name))}><FolderIcon size={14} filled /> {name}</button>
-                <span className="row-actions">
-                  <button type="button" className="icon-btn" title="Renombrar" onClick={() => rename(name)} disabled={busy}><EditIcon size={13} /></button>
-                  <button type="button" className="icon-btn" title="Eliminar" onClick={() => remove(name)} disabled={busy}><TrashIcon size={13} /></button>
-                </span>
-              </li>
-            ))}
-          </ul>
+        <ul className="folder-browser">
+          {folders.length === 0 && <li className="hint">Sin subcarpetas aquí.</li>}
+          {folders.map((name) => (
+            <li key={name} className="folder-row">
+              <button type="button" className="ghost small" onClick={() => browse(join(path, name))}><FolderIcon size={14} /> {name}</button>
+              <span className="row-actions">
+                <button type="button" className="link" onClick={() => rename(name)} disabled={busy}>Renombrar</button>
+                <button type="button" className="link danger" onClick={() => remove(name)} disabled={busy}>Eliminar</button>
+              </span>
+            </li>
+          ))}
+        </ul>
 
-          <form className="new-folder-row" onSubmit={createHere}>
-            <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Nombre de la nueva carpeta" maxLength={200} />
-            <button type="submit" className="ghost small" disabled={busy || !newName.trim()}>Crear carpeta</button>
-          </form>
+        <form className="new-folder-row" onSubmit={createHere}>
+          <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Nombre de la nueva carpeta" maxLength={200} />
+          <button type="submit" className="ghost small" disabled={busy || !newName.trim()}>Crear carpeta</button>
+        </form>
 
-          <div className="actions">
-            <button type="button" className="ghost" onClick={() => fileRef.current?.click()} disabled={busy}><UploadIcon size={14} /> Subir archivos aquí</button>
-            <input ref={fileRef} type="file" multiple hidden onChange={uploadHere} />
-            <button type="button" className="ghost" onClick={reindex} disabled={busy}><RefreshIcon size={14} /> Reindexar ahora</button>
-            <button type="button" className="btn-accent" onClick={selectHere} disabled={busy}>Usar esta carpeta</button>
-          </div>
+        <div className="actions">
+          <button type="button" className="ghost" onClick={() => fileRef.current?.click()} disabled={busy}>Subir archivos aquí</button>
+          <input ref={fileRef} type="file" multiple hidden onChange={uploadHere} />
+          <button type="button" className="ghost" onClick={reindex} disabled={busy}>Reindexar ahora</button>
+          <button type="button" onClick={selectHere} disabled={busy}>Usar esta carpeta</button>
         </div>
       </aside>
     </div>

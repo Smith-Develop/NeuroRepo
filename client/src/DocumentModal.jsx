@@ -31,26 +31,24 @@ export default function DocumentModal({ doc, onClose }) {
 
   return (
     <div className="modal-backdrop" onClick={onClose}>
-      <div className="drawer preview-drawer" onClick={(e) => e.stopPropagation()}>
+      <div className="drawer" style={{ width: "min(720px, 100%)" }} onClick={(e) => e.stopPropagation()}>
         <button type="button" className="close" onClick={onClose} aria-label="Cerrar">×</button>
         <h2 className="preview-title">
-          <span className="file-badge file-badge-inline" style={{ background: badgeFor(doc.ext).color }}>{badgeFor(doc.ext).label}</span>
+          <span className="file-badge" style={{ width: 24, height: 24, fontSize: ".55rem", background: badgeFor(doc.ext).color }}>{badgeFor(doc.ext).label}</span>
           {doc.filename}
         </h2>
-        <div className="preview-body">
-          {isPdf && <iframe title={doc.filename} src={api.viewUrl(doc._id)} className="preview-frame" />}
-          {isImage && <img src={api.viewUrl(doc._id)} alt={doc.filename} className="preview-image" />}
-          {isVideo && <video controls autoPlay className="preview-media" src={api.viewUrl(doc._id)} />}
-          {isAudio && <audio controls autoPlay className="preview-media" src={api.viewUrl(doc._id)} />}
-          {isText && (
-            error ? <p className="error">{error}</p>
-              : text === null ? <p className="hint">Cargando…</p>
-              : <pre className="preview-text">{text}</pre>
-          )}
-          {!isPdf && !isImage && !isText && !isVideo && !isAudio && (
-            <p className="hint">No hay vista previa para este tipo de archivo. Descárgalo para abrirlo.</p>
-          )}
-        </div>
+        {isPdf && <iframe title={doc.filename} src={api.viewUrl(doc._id)} className="preview-frame" />}
+        {isImage && <img src={api.viewUrl(doc._id)} alt={doc.filename} className="preview-image" />}
+        {isVideo && <video controls autoPlay className="preview-media" src={api.viewUrl(doc._id)} />}
+        {isAudio && <audio controls autoPlay className="preview-media" src={api.viewUrl(doc._id)} />}
+        {isText && (
+          error ? <p className="error">{error}</p>
+            : text === null ? <p className="hint">Cargando…</p>
+            : <pre className="preview-text">{text}</pre>
+        )}
+        {!isPdf && !isImage && !isText && !isVideo && !isAudio && (
+          <p className="hint">No hay vista previa para este tipo de archivo. Descárgalo para abrirlo.</p>
+        )}
         <div className="actions">
           <a className="ghost small" href={api.downloadUrl(doc._id)}>Descargar</a>
         </div>

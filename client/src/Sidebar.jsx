@@ -1,17 +1,17 @@
 import Docu from "./Docu";
-import { ChatIcon, FolderIcon, UsersIcon, ShieldIcon, ActivityIcon, LinkIcon, PlusIcon } from "./icons";
+import { ChatIcon, FolderIcon, UsersIcon, ShieldIcon, ActivityIcon, LinkIcon } from "./icons";
 
 const ITEMS = [
-  { id: "chat", label: "Asistente", Icon: ChatIcon },
+  { id: "chat", label: "Chat", Icon: ChatIcon },
   { id: "documentos", label: "Documentos", Icon: FolderIcon },
 ];
 const ADMIN_ITEMS = [
   { id: "usuarios", label: "Usuarios", Icon: UsersIcon },
-  { id: "grupos", label: "Grupos y permisos", Icon: ShieldIcon },
+  { id: "grupos", label: "Grupos", Icon: ShieldIcon },
   { id: "registro", label: "Registro", Icon: ActivityIcon },
 ];
 
-export default function Sidebar({ user, view, onNavigate, onLogout, onOpenLibrary, onNewSearch, docCount, libraryStatus }) {
+export default function Sidebar({ user, view, onNavigate, onLogout, onOpenLibrary }) {
   const initials = (user.name || "?").trim().slice(0, 2).toUpperCase();
   return (
     <nav className="sidebar" aria-label="Navegación">
@@ -19,9 +19,6 @@ export default function Sidebar({ user, view, onNavigate, onLogout, onOpenLibrar
         <Docu size={26} animated={false} />
         <span>Biblioteca</span>
       </div>
-      <button type="button" className="newsearch" onClick={onNewSearch}>
-        <PlusIcon /> <span>Nueva búsqueda</span> <span className="kbd">⌘K</span>
-      </button>
       <div className="sidebar-scroll">
         <div className="sidebar-section">Buscar</div>
         <ul className="sidebar-nav">
@@ -29,7 +26,6 @@ export default function Sidebar({ user, view, onNavigate, onLogout, onOpenLibrar
             <li key={id}>
               <button type="button" className={view === id ? "on" : ""} onClick={() => onNavigate(id)}>
                 <Icon /> <span>{label}</span>
-                {id === "documentos" && <span className="count">{docCount}</span>}
               </button>
             </li>
           ))}
@@ -54,16 +50,6 @@ export default function Sidebar({ user, view, onNavigate, onLogout, onOpenLibrar
           </>
         )}
       </div>
-      {user.role === "admin" && (
-        <div className="lib-status">
-          <div className="row"><span className="dot" /> Biblioteca sincronizada</div>
-          <p>
-            {libraryStatus ? `${libraryStatus.totalDocuments} documentos indexados` : "Cargando estado…"}
-            {libraryStatus?.lastScanAt ? ` · ${new Date(libraryStatus.lastScanAt).toLocaleString()}` : ""}
-          </p>
-          <div className="meter"><i style={{ width: libraryStatus ? "100%" : "35%" }} /></div>
-        </div>
-      )}
       <div className="sidebar-foot">
         <div className="sidebar-user">
           <span className="avatar small avatar-user" aria-hidden="true">{initials}</span>
