@@ -45,6 +45,16 @@ Nada depende de APIs de pago.
 - `server/src/indexer.js` – `scanLibrary()` recorre la biblioteca activa (`fs.readdir` recursivo nativo,
   sin librería), extrae texto solo de lo nuevo/cambiado (compara `mtimeMs`/`size`) y borra de Mongo lo que
   ya no existe en disco. `scheduleIndexing()` lo lanza al arrancar y cada `SCAN_INTERVAL_MINUTES`.
+  Imágenes (`OCR_IMAGE_EXTS`) y PDF con menos de 50 caracteres por página (escaneos) quedan con
+  `ocrStatus: "pending"`; tras cada escaneo, `processOcrQueue()` los procesa de uno en uno (lo último
+  indexado primero) y solo guarda el texto si el archivo no cambió entretanto. Los documentos indexados
+  antes del OCR se marcan una vez con `markLegacyForOcr()`. Un PDF mixto (unas páginas con texto y otras
+  escaneadas) no pasa por OCR.
+- `server/src/ocr.js` – OCR con `tesseract` (`-l spa`, un hilo con `OMP_THREAD_LIMIT=1`) y `pdftoppm`
+  (como mucho `OCR_MAX_PAGES`=30 páginas a 200 ppp), llamados con `execFile`: sin paquete npm. Se
+  instalan en el `Dockerfile` (`apk add`, con reintentos porque el DNS de Docker Desktop falla a veces).
+  Si no están (desarrollo) o `OCR_ENABLED=false`, el OCR queda desactivado y lo dice en el log.
+  `GET /library` devuelve `ocr`, `ocrPending` y `ocrFailed`, que se muestran en «Vincular biblioteca».
 - `server/src/search.js` – `searchDocuments(query)`: `$text` de Mongo + `rerank` (coincidencia de palabras
   distintas de la consulta, raíz de 5 letras sin tildes, igual criterio que el buscador anterior de notas).
   **Importante**: la puntuación (`score: {$meta:"textScore"}`) va en la MISMA llamada a `.find()`/proyección
@@ -212,7 +222,9 @@ falta).
   ahí desde «Vincular biblioteca»). Eso sí se puede cambiar desde el propio panel de Coolify sin tocar
   código ni redesplegar. En local, `docker-compose.local.yml` sí declara el mount con `DOCS_HOST_PATH`
   (ahí no aplica la restricción de Coolify).
-- Requisitos del VPS: ~4 GB de RAM libre, 4 vCPU recomendados, ~8 GB de disco, CPU con AVX2.
+- Requisitos del VPS: ~4 GB de RAM libre, 4 vCPU recomendados, ~8 GB de disco, CPU con AVX2. El OCR
+  añade ~95 MB a la imagen y unos 1–5 s de CPU por página; la primera pasada sobre una biblioteca con
+  muchas imágenes o escaneos puede tardar horas (va en segundo plano y la búsqueda sigue funcionando).
 - Desplegado en Coolify: proyecto «NeuroRepo», app `neurorepo` (uuid `b11eclxarnaji4ewyx6ter6y`) →
   https://neurorepo.coolify.kaizencode.me. Redesplegar: `GET /api/v1/deploy?uuid=b11eclxarnaji4ewyx6ter6y`.
   **Pendiente**: el pivote a gestor documental todavía no se ha desplegado ahí (solo probado en local); al

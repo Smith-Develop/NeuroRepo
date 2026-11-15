@@ -26,6 +26,13 @@ export default function LibraryPicker({ onClose }) {
     } catch (e) { setError(e.message); }
   }
   useEffect(() => { loadStatus(); browse(""); }, []);
+  // Mientras haya OCR pendiente, refresca el contador para ver cómo avanza la cola
+  const ocrBusy = status?.ocr && status.ocrPending > 0;
+  useEffect(() => {
+    if (!ocrBusy) return;
+    const t = setInterval(loadStatus, 5000);
+    return () => clearInterval(t);
+  }, [ocrBusy]);
 
   async function selectHere() {
     setBusy(true);
@@ -114,6 +121,10 @@ export default function LibraryPicker({ onClose }) {
               <div><small>Carpeta activa</small><b>/{status.libraryPath || ""}</b></div>
               <div><small>Indexados</small><b>{status.totalDocuments}</b></div>
               <div><small>Última sync</small><b>{status.lastScanAt ? new Date(status.lastScanAt).toLocaleString("es-ES", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "Nunca"}</b></div>
+              <div title={status.ocrFailed ? `${status.ocrFailed} documento(s) no se pudieron leer con OCR` : undefined}>
+                <small>OCR (escaneos)</small>
+                <b>{!status.ocr ? "No disponible" : status.ocrPending ? `${status.ocrPending} en cola` : "Al día"}</b>
+              </div>
             </div>
           )}
           {error && <p className="error" role="alert">{error}</p>}

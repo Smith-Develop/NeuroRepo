@@ -394,7 +394,7 @@ tr.file .nm:hover { color: var(--accent-2); }
 .folder-list .fr:hover .acts { opacity: 1; }
 .inline { display: flex; gap: 8px; }
 .inline .input { flex: 1; }
-.status-box { display: grid; grid-template-columns: repeat(3, 1fr); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); }
+.status-box { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); }
 .status-box div { padding: 12px 14px; border-right: 1px solid var(--border); }
 .status-box div:last-child { border-right: 0; }
 .status-box small { display: block; color: var(--text-3); font-size: 11.5px; }

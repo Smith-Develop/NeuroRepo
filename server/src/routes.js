@@ -14,6 +14,7 @@ import {
 } from "./library.js";
 import { scanLibrary } from "./indexer.js";
 import { logActivity } from "./activityLog.js";
+import { ocrAvailable } from "./ocr.js";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024, files: 20 } });
 
@@ -180,8 +181,10 @@ r.patch("/folders/:name", requireAdmin, wrap(async (req, res) => {
 // Estado y gestión de la biblioteca de documentos (solo admin)
 r.get("/library", requireAdmin, wrap(async (req, res) => {
   const config = await getAppConfig();
-  const totalDocuments = await Document.countDocuments();
-  res.json({ libraryPath: config.libraryPath, lastScanAt: config.lastScanAt, lastScanCount: config.lastScanCount, totalDocuments });
+  const [totalDocuments, ocrPending, ocrFailed, ocr] = await Promise.all([
+    Document.countDocuments(), Document.countDocuments({ ocrStatus: "pending" }), Document.countDocuments({ ocrStatus: "failed" }), ocrAvailable(),
+  ]);
+  res.json({ libraryPath: config.libraryPath, lastScanAt: config.lastScanAt, lastScanCount: config.lastScanCount, totalDocuments, ocr, ocrPending, ocrFailed });
 }));
 
 r.get("/library/browse", requireAdmin, wrap(async (req, res) => {
