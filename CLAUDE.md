@@ -39,9 +39,20 @@ Nada depende de APIs de pago.
   **activa** (`AppConfig.libraryPath`, una subcarpeta relativa elegida con «Vincular biblioteca»).
   `safeResolve` evita salirse de la raíz montada (path traversal). `browseFolder` lista subcarpetas para
   el selector; `setActiveLibraryPath` cambia la carpeta activa (la siguiente pasada del indexador poda
-  solo los documentos que ya no están bajo la nueva carpeta). `createFolder`/`renameFolder`/`deleteFolder`
-  operan sobre cualquier ruta dentro de `LIBRARY_ROOT` (nunca sobre la raíz misma, protegida a propósito);
-  `saveUploadedFile` guarda el buffer que recibe `routes.js` desde `multer`.
+  solo los documentos que ya no están bajo la nueva carpeta). Todas las rutas que manda el admin pasan
+  por `resolveVisible`: dentro de `LIBRARY_ROOT`, sin ningún tramo que empiece por «.» (protege
+  `.versiones`/`.papelera`) y, donde toca, nunca la raíz — comparando la ruta **ya resuelta**, para que
+  `x/..` no se cuele (antes `deleteFolder("x/..")` habría borrado la raíz entera).
+  `saveUploadedFile`/`restoreVersion` escriben vía `replaceFile`: temporal oculto junto al destino →
+  aparta la versión actual a `.versiones/<carpeta>/<fecha>__<nombre>` → renombrado atómico.
+  `moveToTrash` mueve a `.papelera/<fecha>/<ruta original>` (ya no hay borrado directo desde la app);
+  `restoreFromTrash` falla si en la ruta original ya hay algo. `.versiones`/`.papelera` viven en la raíz de
+  `LIBRARY_ROOT` y quedan ocultas porque el indexador y el selector se saltan lo que empieza por «.».
+- `server/src/history.js` – une lo anterior con Mongo (`FileVersion`, `TrashItem`): `recordVersion`
+  conserva las `VERSIONS_MAX` (10) últimas por archivo, `trash`, `purgeExpiredTrash` (pasados
+  `TRASH_RETENTION_DAYS`, 30; lo lanza `scheduleIndexing`), `renameVersionPaths` (al renombrar una
+  carpeta el historial sigue a la ruta nueva). Las rutas guardadas son relativas a `LIBRARY_ROOT`, no a la
+  biblioteca activa. Límite: lo que se edite directamente en el disco del host no deja versión.
 - `server/src/indexer.js` – `scanLibrary()` recorre la biblioteca activa (`fs.readdir` recursivo nativo,
   sin librería), extrae texto solo de lo nuevo/cambiado (compara `mtimeMs`/`size`) y borra de Mongo lo que
   ya no existe en disco. `scheduleIndexing()` lo lanza al arrancar y cada `SCAN_INTERVAL_MINUTES`.
@@ -83,10 +94,14 @@ Nada depende de APIs de pago.
   - `GET /library`, `GET /library/browse?path=`, `POST /library/select`, `POST /library/reindex` (admin) –
     estado de la biblioteca y el selector «Vincular biblioteca».
   - `POST /library/folders {path,name}`, `PATCH /library/folders {path,newName}`,
-    `DELETE /library/folders?path=` (admin) – crear/renombrar/borrar carpetas dentro de `LIBRARY_ROOT`;
-    cada operación relanza `scanLibrary()` para que el índice refleje el cambio al instante.
+    `DELETE /library/folders?path=` (admin) – crear/renombrar/mover a la papelera carpetas dentro de
+    `LIBRARY_ROOT`; cada operación relanza `scanLibrary()` para que el índice refleje el cambio al instante.
   - `POST /library/upload` (admin, `multipart/form-data` con `multer`, campo `files` + `path`) – sube uno
-    o varios archivos a una carpeta y reindexa.
+    o varios archivos a una carpeta y reindexa; si sustituye a uno existente, el anterior queda como versión.
+  - Historial (admin): `DELETE /documents/:id` (archivo a la papelera), `GET /documents/:id/versions`,
+    `GET /versions/:id/download` (necesita `dotfiles: "allow"` porque `.versiones` empieza por punto),
+    `POST /versions/:id/restore`, `GET /trash`, `POST /trash/:id/restore` (409 si la ruta está ocupada),
+    `DELETE /trash/:id` (definitivo).
 - `server/src/models.js` – `Document {path, filename, ext, folder, topFolder, size, mtimeMs,
   extractedText, textOk}` (índice de texto en `filename`/`folder`/`extractedText`), `Group {name,
   folders: [String]}` (nombres de carpetas de primer nivel, no referencias), `FolderConfig {folder,
@@ -130,7 +145,11 @@ Nada depende de APIs de pago.
   fija la activa, crea/renombra/borra carpetas (renombrar y borrar usan `prompt()`/`confirm()` nativos —
   en pruebas automatizadas sin interacción real esos diálogos se cancelan solos, es una limitación del
   navegador de pruebas, no un bug), sube archivos (`<input type="file" multiple>` + `FormData`), y muestra
-  el estado del índice con reindexado bajo demanda.
+  el estado del índice con reindexado bajo demanda. El botón «Papelera» cambia el cuerpo a `TrashList`
+  (recuperar / borrar definitivamente).
+- `client/src/appContext.js` – `AppContext {user, reloadDocuments}` (lo provee `App.jsx`): lo usan
+  `DocumentModal` (pestaña «Versiones», solo admin) y las filas de `Explorer` (botón de papelera, solo
+  admin; el admin puede abrir el modal de cualquier archivo, tenga vista previa o no).
 - `client/src/Login.jsx` – un único campo DNI; si el servidor responde `needsPassword`, aparece el segundo
   campo de contraseña (solo le pasa al admin).
 - `client/src/Users.jsx` – alta nombre+DNI, botón «Importar .txt» (lee el archivo con `FileReader` en el

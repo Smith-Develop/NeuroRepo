@@ -9,6 +9,7 @@ import Groups from "./Groups";
 import ActivityLog from "./ActivityLog";
 import LibraryPicker from "./LibraryPicker";
 import Toaster from "./Toaster";
+import { AppContext } from "./appContext";
 
 export default function App() {
   const [user, setUser] = useState(undefined); // undefined = comprobando sesión, null = sin sesión
@@ -50,6 +51,7 @@ export default function App() {
   if (!user) return <Login onLogin={setUser} />;
 
   return (
+    <AppContext.Provider value={{ user, reloadDocuments: load }}>
     <div className="app">
       <Sidebar user={user} view={view} documentCount={documents.length} onNavigate={navigate} onLogout={logout} onOpenLibrary={() => setLibraryOpen(true)} />
       <main className="main">
@@ -66,5 +68,6 @@ export default function App() {
       {libraryOpen && <LibraryPicker onClose={closeLibrary} />}
       <Toaster />
     </div>
+    </AppContext.Provider>
   );
 }

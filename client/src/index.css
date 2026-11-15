@@ -51,6 +51,7 @@ svg.i { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor;
 .btn-icon { width: 32px; height: 32px; padding: 0; border-radius: var(--r-sm); display: inline-grid; place-items: center; color: var(--text-2); }
 .btn-icon:hover { background: var(--surface-3); color: var(--text); }
 .btn-icon.sm { width: 28px; height: 28px; }
+.btn-icon.danger:hover { background: var(--danger-soft); color: var(--danger); }
 .btn:disabled { opacity: .45; pointer-events: none; }
 
 /* ---------- Campos ---------- */
@@ -392,6 +393,8 @@ tr.file .nm:hover { color: var(--accent-2); }
 .folder-list .fr .nm { flex: 1; font-weight: 500; }
 .folder-list .fr .acts { display: flex; gap: 2px; opacity: 0; }
 .folder-list .fr:hover .acts { opacity: 1; }
+.folder-list .trash-nm { min-width: 0; display: flex; flex-direction: column; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.folder-list .trash-nm small { color: var(--text-3); font-weight: 400; font-size: 11.5px; }
 .inline { display: flex; gap: 8px; }
 .inline .input { flex: 1; }
 .status-box { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); }
@@ -410,6 +413,15 @@ tr.file .nm:hover { color: var(--accent-2); }
 .viewer-body iframe.office-frame { flex: 1; min-height: 0; background: var(--surface); border: 1px solid var(--border); }
 .viewer-tabs { align-self: flex-start; max-width: 100%; overflow-x: auto; flex-shrink: 0; }
 .viewer-note { margin: 0; font-size: 12.5px; }
+.viewer-body:has(.versions) { justify-content: flex-start; align-items: stretch; }
+.versions { display: flex; flex-direction: column; gap: 12px; width: 100%; }
+.versions .hint { margin: 0; font-size: 13px; }
+.version-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); }
+.version-list li { display: flex; align-items: center; gap: 12px; padding: 10px 14px; border-bottom: 1px solid var(--border); }
+.version-list li:last-child { border-bottom: 0; }
+.version-list .vtx { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.version-list .vtx b { font-weight: 600; font-size: 13.5px; color: var(--text); }
+.version-list .vtx small { color: var(--text-3); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ---------- Login ---------- */
 .login { height: 100%; display: grid; grid-template-columns: 1fr 1fr; background: var(--bg); }

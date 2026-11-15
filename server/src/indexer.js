@@ -6,6 +6,7 @@ import * as XLSX from "xlsx";
 import { Document } from "./models.js";
 import { getActiveLibraryPath, getAppConfig, safeResolve } from "./library.js";
 import { ocrAvailable, ocrImage, ocrPdf, OCR_IMAGE_EXTS } from "./ocr.js";
+import { purgeExpiredTrash } from "./history.js";
 
 const MAX_TEXT = 200_000; // recorte por documento, para no disparar el tamaño del índice
 const TEXT_EXTS = new Set([".txt", ".md", ".csv"]);
@@ -142,6 +143,10 @@ export async function scanLibrary() {
 
 export function scheduleIndexing() {
   const minutes = Number(process.env.SCAN_INTERVAL_MINUTES) || 15;
-  scanLibrary().catch((e) => console.error("Error indexando la biblioteca:", e));
-  setInterval(() => scanLibrary().catch((e) => console.error("Error indexando la biblioteca:", e)), minutes * 60 * 1000);
+  const tick = () => {
+    scanLibrary().catch((e) => console.error("Error indexando la biblioteca:", e));
+    purgeExpiredTrash().catch((e) => console.error("Error vaciando la papelera caducada:", e));
+  };
+  tick();
+  setInterval(tick, minutes * 60 * 1000);
 }

@@ -4,14 +4,15 @@ import multer from "multer";
 import mammoth from "mammoth";
 import * as XLSX from "xlsx";
 import { readFileSync } from "node:fs";
-import { Document, FolderConfig } from "./models.js";
+import { Document, FolderConfig, FileVersion, TrashItem } from "./models.js";
 import { requireAdmin, allowedFolders } from "./auth.js";
 import { searchDocuments, topScore } from "./search.js";
 import { suggestKeywords } from "./ai.js";
 import {
-  safeResolve, browseFolder, getActiveLibraryPath, setActiveLibraryPath, getAppConfig, LibraryPathError,
-  createFolder, renameFolder, deleteFolder, saveUploadedFile,
+  safeResolve, browseFolder, getActiveLibraryPath, setActiveLibraryPath, getAppConfig, LibraryPathError, LIBRARY_ROOT,
+  createFolder, renameFolder, saveUploadedFile, restoreVersion, restoreFromTrash, toRootRel,
 } from "./library.js";
+import { recordVersion, trash, purgeTrashItem, renameVersionPaths, TRASH_DAYS } from "./history.js";
 import { scanLibrary } from "./indexer.js";
 import { logActivity } from "./activityLog.js";
 import { ocrAvailable } from "./ocr.js";
@@ -225,40 +226,128 @@ r.post("/library/folders", requireAdmin, wrap(async (req, res) => {
 }));
 
 r.patch("/library/folders", requireAdmin, wrap(async (req, res) => {
+  let renamed;
   try {
-    const from = text(req.body?.path, 2000);
-    const rel = renameFolder(from, text(req.body?.newName, 200));
-    await scanLibrary();
-    await logActivity(req, "folder.rename", `/${from} → /${rel}`);
-    res.json({ path: rel });
+    renamed = renameFolder(text(req.body?.path, 2000), text(req.body?.newName, 200));
   } catch (e) {
-    res.status(400).json({ error: e instanceof LibraryPathError ? e.message : "No se pudo renombrar la carpeta." });
+    return res.status(400).json({ error: e instanceof LibraryPathError ? e.message : "No se pudo renombrar la carpeta." });
   }
+  await renameVersionPaths(renamed.from, renamed.to);
+  await scanLibrary();
+  await logActivity(req, "folder.rename", `/${renamed.from} → /${renamed.to}`);
+  res.json({ path: renamed.to });
 }));
 
+// Borrar = mover a la papelera (se puede restaurar durante TRASH_RETENTION_DAYS)
 r.delete("/library/folders", requireAdmin, wrap(async (req, res) => {
+  let item;
   try {
-    const target = text(req.query.path, 2000);
-    deleteFolder(target);
-    await scanLibrary();
-    await logActivity(req, "folder.delete", `/${target}`);
-    res.status(204).end();
+    item = await trash(req, text(req.query.path, 2000));
   } catch (e) {
-    res.status(400).json({ error: e instanceof LibraryPathError ? e.message : "No se pudo borrar la carpeta." });
+    return res.status(400).json({ error: e instanceof LibraryPathError ? e.message : "No se pudo borrar la carpeta." });
   }
+  await scanLibrary();
+  await logActivity(req, "folder.delete", `/${item.originalPath}`);
+  res.status(204).end();
 }));
 
 r.post("/library/upload", requireAdmin, upload.array("files", 20), wrap(async (req, res) => {
   const targetPath = text(req.body?.path, 2000);
   if (!req.files?.length) return res.status(400).json({ error: "No se ha subido ningún archivo." });
+  let replaced = 0;
   try {
-    for (const file of req.files) saveUploadedFile(targetPath, file.originalname, file.buffer);
-    await logActivity(req, "document.upload", `/${targetPath}: ${req.files.map((f) => f.originalname).join(", ")}`);
+    for (const file of req.files) {
+      const { version } = saveUploadedFile(targetPath, file.originalname, file.buffer);
+      if (version) { await recordVersion(req, version); replaced++; }
+    }
   } catch (e) {
     return res.status(400).json({ error: e instanceof LibraryPathError ? e.message : "No se pudo guardar el archivo." });
   }
+  await logActivity(req, "document.upload", `/${targetPath}: ${req.files.map((f) => f.originalname).join(", ")}${replaced ? ` (${replaced} sustituido(s), versión anterior guardada)` : ""}`);
   const result = await scanLibrary();
-  res.json({ ok: true, uploaded: req.files.length, indexed: result?.count ?? 0 });
+  res.json({ ok: true, uploaded: req.files.length, replaced, indexed: result?.count ?? 0 });
+}));
+
+// Ruta de un documento indexado relativa a LIBRARY_ROOT (Document.path es relativa a la biblioteca activa)
+async function rootPathOf(doc) {
+  return toRootRel(safeResolve(await getActiveLibraryPath(), doc.path));
+}
+
+// Un archivo suelto a la papelera
+r.delete("/documents/:id", requireAdmin, wrap(async (req, res) => {
+  const doc = await findAccessibleDoc(req, res);
+  if (!doc) return;
+  let item;
+  try {
+    item = await trash(req, await rootPathOf(doc));
+  } catch (e) {
+    return res.status(400).json({ error: e instanceof LibraryPathError ? e.message : "No se pudo borrar el archivo." });
+  }
+  await scanLibrary();
+  await logActivity(req, "document.delete", `/${item.originalPath}`);
+  res.status(204).end();
+}));
+
+// Versiones anteriores de un documento (las que se apartaron al sobrescribirlo desde la app)
+r.get("/documents/:id/versions", requireAdmin, wrap(async (req, res) => {
+  const doc = await findAccessibleDoc(req, res);
+  if (!doc) return;
+  res.json(await FileVersion.find({ originalPath: await rootPathOf(doc) }, "size mtimeMs byName createdAt").sort({ createdAt: -1, _id: -1 }).lean());
+}));
+
+async function findById(Model, req, res) {
+  if (!mongoose.isValidObjectId(req.params.id)) { res.status(404).end(); return null; }
+  const found = await Model.findById(req.params.id);
+  if (!found) res.status(404).end();
+  return found;
+}
+
+r.get("/versions/:id/download", requireAdmin, wrap(async (req, res) => {
+  const version = await findById(FileVersion, req, res);
+  if (!version) return;
+  const name = version.originalPath.split("/").pop();
+  const day = version.createdAt.toISOString().slice(0, 10);
+  // dotfiles: "allow" porque .versiones empieza por punto y send lo ignora por defecto
+  res.download(safeResolve(LIBRARY_ROOT, version.storedPath), name.replace(/(\.[^.]*)?$/, ` (versión ${day})$1`), { dotfiles: "allow" });
+}));
+
+r.post("/versions/:id/restore", requireAdmin, wrap(async (req, res) => {
+  const version = await findById(FileVersion, req, res);
+  if (!version) return;
+  try {
+    await recordVersion(req, restoreVersion(version));
+  } catch (e) {
+    return res.status(400).json({ error: e instanceof LibraryPathError ? e.message : "No se pudo restaurar la versión." });
+  }
+  await scanLibrary();
+  await logActivity(req, "version.restore", `/${version.originalPath} (${version.createdAt.toLocaleString("es-ES")})`);
+  res.status(204).end();
+}));
+
+r.get("/trash", requireAdmin, wrap(async (req, res) => {
+  res.json({ retentionDays: TRASH_DAYS, items: await TrashItem.find({}, "-storedPath").sort({ createdAt: -1 }).limit(500).lean() });
+}));
+
+r.post("/trash/:id/restore", requireAdmin, wrap(async (req, res) => {
+  const item = await findById(TrashItem, req, res);
+  if (!item) return;
+  try {
+    restoreFromTrash(item);
+  } catch (e) {
+    return res.status(409).json({ error: e instanceof LibraryPathError ? e.message : "No se pudo restaurar." });
+  }
+  await item.deleteOne();
+  await scanLibrary();
+  await logActivity(req, "trash.restore", `/${item.originalPath}`);
+  res.status(204).end();
+}));
+
+r.delete("/trash/:id", requireAdmin, wrap(async (req, res) => {
+  const item = await findById(TrashItem, req, res);
+  if (!item) return;
+  await purgeTrashItem(item);
+  await logActivity(req, "trash.purge", `/${item.originalPath}`);
+  res.status(204).end();
 }));
 
 export default r;

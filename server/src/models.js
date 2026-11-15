@@ -77,7 +77,38 @@ const activityLogSchema = new mongoose.Schema(
 );
 activityLogSchema.index({ createdAt: -1 });
 
+// Versión anterior de un archivo, apartada al sobrescribirlo (subida o restauración). Rutas relativas a
+// LIBRARY_ROOT, no a la biblioteca activa: así sobreviven a un cambio de carpeta activa.
+const fileVersionSchema = new mongoose.Schema(
+  {
+    originalPath: { type: String, required: true, index: true },
+    storedPath: { type: String, required: true }, // dentro de .versiones/
+    size: { type: Number, default: 0 },
+    mtimeMs: { type: Number, default: 0 },
+    byName: { type: String, default: "" },
+    byDni: { type: String, default: "" },
+  },
+  { timestamps: { createdAt: true, updatedAt: false } },
+);
+
+// Archivo o carpeta borrado desde la app: se mueve a .papelera/ y se purga pasados TRASH_RETENTION_DAYS
+const trashItemSchema = new mongoose.Schema(
+  {
+    originalPath: { type: String, required: true },
+    storedPath: { type: String, required: true }, // dentro de .papelera/
+    kind: { type: String, enum: ["file", "folder"], required: true },
+    size: { type: Number, default: 0 },
+    files: { type: Number, default: 0 },
+    byName: { type: String, default: "" },
+    byDni: { type: String, default: "" },
+  },
+  { timestamps: { createdAt: true, updatedAt: false } },
+);
+trashItemSchema.index({ createdAt: -1 });
+
 export const Document = mongoose.model("Document", documentSchema);
+export const FileVersion = mongoose.model("FileVersion", fileVersionSchema);
+export const TrashItem = mongoose.model("TrashItem", trashItemSchema);
 export const Group = mongoose.model("Group", groupSchema);
 export const FolderConfig = mongoose.model("FolderConfig", folderConfigSchema);
 export const AppConfig = mongoose.model("AppConfig", appConfigSchema);

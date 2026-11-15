@@ -1,11 +1,12 @@
-import { useMemo, useState } from "react";
+import { useContext, useMemo, useState } from "react";
 import { api } from "./api";
 import { badgeFor, formatSize, formatDate, PREVIEWABLE, IMAGE_EXT, VIDEO_EXT, AUDIO_EXT } from "./DocumentCard";
 import DocumentModal from "./DocumentModal";
 import { toast } from "./toast";
+import { AppContext } from "./appContext";
 import {
   FolderIcon, GridIcon, ListIcon, SearchIcon, HomeIcon, ChevronRightIcon, ChevronDownIcon,
-  EyeIcon, RefreshIcon, UploadIcon, InfoIcon, DownloadIcon,
+  EyeIcon, RefreshIcon, UploadIcon, InfoIcon, DownloadIcon, TrashIcon,
 } from "./icons";
 
 const TYPES = [
@@ -33,10 +34,26 @@ function countAll(node) {
   return node.files.length + [...node.folders.values()].reduce((s, n) => s + countAll(n), 0);
 }
 function download(doc) { toast(`Descargando ${doc.filename}`); }
-const canOpen = (doc) => PREVIEWABLE.has(doc.ext) || VIDEO_EXT.has(doc.ext) || AUDIO_EXT.has(doc.ext);
+const canPreview = (doc) => PREVIEWABLE.has(doc.ext) || VIDEO_EXT.has(doc.ext) || AUDIO_EXT.has(doc.ext);
+
+// El admin abre el modal de cualquier archivo (aunque no tenga vista previa) para ver sus versiones
+function useCanOpen() {
+  const { user } = useContext(AppContext);
+  return (doc) => user?.role === "admin" || canPreview(doc);
+}
 
 function FileRow({ doc, depth, onOpen }) {
   const { label, cls } = badgeFor(doc.ext);
+  const { user, reloadDocuments } = useContext(AppContext);
+  const canOpen = useCanOpen();
+  async function moveToTrash() {
+    if (!confirm(`¿Mover «${doc.filename}» a la papelera? Podrás recuperarlo durante un tiempo desde «Vincular biblioteca».`)) return;
+    try {
+      await api.deleteDocument(doc._id);
+      toast(`${doc.filename} movido a la papelera`);
+      reloadDocuments();
+    } catch (e) { toast(e.message); }
+  }
   return (
     <tr className="file">
       <td style={{ paddingLeft: 24 + depth * 24, cursor: canOpen(doc) ? "pointer" : "default" }} onClick={canOpen(doc) ? () => onOpen(doc) : undefined}>
@@ -50,8 +67,9 @@ function FileRow({ doc, depth, onOpen }) {
       <td className="num hide-sm">{formatDate(doc.mtimeMs)}</td>
       <td>
         <div className="row-acts">
-          {canOpen(doc) && <button type="button" className="btn-icon sm" title="Vista previa" onClick={() => onOpen(doc)}><EyeIcon size={15} /></button>}
+          {canPreview(doc) && <button type="button" className="btn-icon sm" title="Vista previa" onClick={() => onOpen(doc)}><EyeIcon size={15} /></button>}
           <a className="btn-icon sm" title="Descargar" href={api.downloadUrl(doc._id)} onClick={() => download(doc)}><DownloadIcon size={15} /></a>
+          {user?.role === "admin" && <button type="button" className="btn-icon sm danger" title="Mover a la papelera" onClick={moveToTrash}><TrashIcon size={15} /></button>}
         </div>
       </td>
     </tr>
@@ -93,7 +111,7 @@ function ListView({ tree, forceOpen, onOpen }) {
   return (
     <div className="card" style={{ overflow: "hidden" }}>
       <table className="table">
-        <thead><tr><th>Nombre</th><th className="hide-sm">Tipo</th><th className="num">Tamaño</th><th className="num hide-sm">Modificado</th><th style={{ width: 90 }}></th></tr></thead>
+        <thead><tr><th>Nombre</th><th className="hide-sm">Tipo</th><th className="num">Tamaño</th><th className="num hide-sm">Modificado</th><th style={{ width: 100 }}></th></tr></thead>
         <tbody>
           {topFolders.map(([name, node]) => (
             <FolderRows key={name} name={name} node={node} depth={0} openFolders={effectiveOpen} toggle={toggle} onOpen={onOpen} />
@@ -115,6 +133,7 @@ function allPaths(node, prefix = "") {
 
 function FileTile({ doc }) {
   const [open, setOpen] = useState(false);
+  const canOpen = useCanOpen();
   const { label, cls } = badgeFor(doc.ext);
   function activate() {
     if (canOpen(doc)) setOpen(true);

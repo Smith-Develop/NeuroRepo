@@ -1,7 +1,9 @@
-import { useEffect, useState } from "react";
+import { useCallback, useContext, useEffect, useState } from "react";
 import { api } from "./api";
 import { badgeFor, formatSize, formatDate, IMAGE_EXT, TEXT_EXT, VIDEO_EXT, AUDIO_EXT, OFFICE_EXT } from "./DocumentCard";
-import { XIcon, DownloadIcon } from "./icons";
+import { XIcon, DownloadIcon, HistoryIcon, RestoreIcon } from "./icons";
+import { AppContext } from "./appContext";
+import { toast } from "./toast";
 
 // El HTML de Word/Excel viene del propio documento: se pinta en un iframe con sandbox="" (sin
 // scripts, origen opaco) y una CSP que no deja cargar nada externo. Los colores se leen del tema.
@@ -22,6 +24,50 @@ function officeSrcDoc(html) {
 </style></head><body>${html}</body></html>`;
 }
 
+const when = (d) => new Date(d).toLocaleString("es-ES", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" });
+
+// Versiones anteriores (solo admin): las que se guardaron al sustituir el archivo subiendo otro igual
+function VersionsPanel({ doc, onRestored }) {
+  const [versions, setVersions] = useState(null);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const load = useCallback(() => api.versions(doc._id).then(setVersions).catch((e) => setError(e.message)), [doc._id]);
+  useEffect(() => { load(); }, [load]);
+
+  async function restore(v) {
+    if (!confirm(`¿Restaurar la versión del ${when(v.mtimeMs)}? Lo que hay ahora se guardará como otra versión.`)) return;
+    setBusy(true);
+    setError("");
+    try {
+      await api.restoreVersion(v._id);
+      toast("Versión restaurada");
+      await load();
+      onRestored();
+    } catch (e) { setError(e.message); } finally { setBusy(false); }
+  }
+
+  return (
+    <div className="versions">
+      <p className="hint">Cada vez que se sube un archivo con el mismo nombre, el anterior se guarda aquí (se conservan las 10 últimas).</p>
+      {error && <p className="error" role="alert">{error}</p>}
+      {versions === null ? <p className="hint">Cargando…</p>
+        : versions.length === 0 ? <p className="hint">Este archivo todavía no tiene versiones anteriores.</p>
+        : (
+          <ul className="version-list">
+            {versions.map((v) => (
+              <li key={v._id}>
+                <span className="fold-ic"><HistoryIcon size={15} /></span>
+                <span className="vtx"><b>Versión del {when(v.mtimeMs)}</b><small>Sustituida el {when(v.createdAt)} por {v.byName} · {formatSize(v.size)}</small></span>
+                <a className="btn-icon sm" href={api.versionDownloadUrl(v._id)} title="Descargar esta versión" aria-label="Descargar esta versión"><DownloadIcon size={15} /></a>
+                <button type="button" className="btn btn-secondary btn-sm" disabled={busy} onClick={() => restore(v)}><RestoreIcon size={14} />Restaurar</button>
+              </li>
+            ))}
+          </ul>
+        )}
+    </div>
+  );
+}
+
 // Visor en diálogo: pdf (iframe), imagen, texto (se lee aparte y se muestra con el estilo
 // oscuro de la app), Word/Excel (HTML convertido en el servidor), vídeo/audio (reproductor).
 export default function DocumentModal({ doc, onClose }) {
@@ -29,6 +75,11 @@ export default function DocumentModal({ doc, onClose }) {
   const [office, setOffice] = useState(null);
   const [sheet, setSheet] = useState(0);
   const [error, setError] = useState("");
+  const [showVersions, setShowVersions] = useState(false);
+  const [rev, setRev] = useState(0); // sube al restaurar una versión, para volver a pedir el archivo
+  const { user, reloadDocuments } = useContext(AppContext);
+  const isAdmin = user?.role === "admin";
+  const viewSrc = api.viewUrl(doc._id) + (rev ? `?r=${rev}` : "");
   const isPdf = doc.ext === ".pdf";
   const isImage = IMAGE_EXT.has(doc.ext);
   const isText = TEXT_EXT.has(doc.ext);
@@ -40,21 +91,23 @@ export default function DocumentModal({ doc, onClose }) {
   useEffect(() => {
     if (!isOffice) return;
     let cancelled = false;
+    setOffice(null);
     api.preview(doc._id)
       .then((p) => { if (!cancelled) setOffice(p); })
       .catch((e) => { if (!cancelled) setError(e.message); });
     return () => { cancelled = true; };
-  }, [doc._id, isOffice]);
+  }, [doc._id, isOffice, rev]);
 
   useEffect(() => {
     if (!isText) return;
     let cancelled = false;
-    fetch(api.viewUrl(doc._id), { credentials: "include" })
+    setText(null);
+    fetch(viewSrc, { credentials: "include" })
       .then((r) => { if (!r.ok) throw new Error("No se pudo abrir el archivo."); return r.text(); })
       .then((t) => { if (!cancelled) setText(t); })
       .catch((e) => { if (!cancelled) setError(e.message); });
     return () => { cancelled = true; };
-  }, [doc._id, isText]);
+  }, [viewSrc, isText]);
 
   useEffect(() => {
     function onKey(e) { if (e.key === "Escape") onClose(); }
@@ -71,14 +124,22 @@ export default function DocumentModal({ doc, onClose }) {
             <h3 id="viewT">{doc.filename}</h3>
             <p>{doc.folder || "/"} · {formatSize(doc.size)}{doc.mtimeMs ? ` · Actualizado ${formatDate(doc.mtimeMs)}` : ""}</p>
           </div>
+          {isAdmin && (
+            <button type="button" className={`btn btn-ghost btn-sm${showVersions ? " on" : ""}`} onClick={() => setShowVersions((v) => !v)} aria-pressed={showVersions}>
+              <HistoryIcon size={14} />{showVersions ? "Vista previa" : "Versiones"}
+            </button>
+          )}
           <a className="btn btn-secondary btn-sm" href={api.downloadUrl(doc._id)}><DownloadIcon size={14} />Descargar</a>
           <button type="button" className="btn-icon" onClick={onClose} aria-label="Cerrar"><XIcon /></button>
         </div>
+        {showVersions ? (
+          <div className="viewer-body"><VersionsPanel doc={doc} onRestored={() => { setRev((r) => r + 1); reloadDocuments(); }} /></div>
+        ) : (
         <div className="viewer-body">
-          {isPdf && <iframe title={doc.filename} src={api.viewUrl(doc._id)} />}
-          {isImage && <img src={api.viewUrl(doc._id)} alt={doc.filename} />}
-          {isVideo && <video controls autoPlay src={api.viewUrl(doc._id)} />}
-          {isAudio && <audio controls autoPlay src={api.viewUrl(doc._id)} />}
+          {isPdf && <iframe title={doc.filename} src={viewSrc} />}
+          {isImage && <img src={viewSrc} alt={doc.filename} />}
+          {isVideo && <video controls autoPlay src={viewSrc} />}
+          {isAudio && <audio controls autoPlay src={viewSrc} />}
           {isText && (
             error ? <p className="error">{error}</p>
               : text === null ? <p className="hint">Cargando…</p>
@@ -105,6 +166,7 @@ export default function DocumentModal({ doc, onClose }) {
             <p className="hint">No hay vista previa para este tipo de archivo. Descárgalo para abrirlo.</p>
           )}
         </div>
+        )}
       </div>
     </div>
   );

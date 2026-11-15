@@ -21,6 +21,13 @@ export const api = {
   viewUrl: (id) => `/api/documents/${id}/view`,
   downloadUrl: (id) => `/api/documents/${id}/download`,
   preview: (id) => req(`/documents/${id}/preview`),
+  deleteDocument: (id) => req(`/documents/${id}`, { method: "DELETE" }),
+  versions: (id) => req(`/documents/${id}/versions`),
+  versionDownloadUrl: (versionId) => `/api/versions/${versionId}/download`,
+  restoreVersion: (versionId) => req(`/versions/${versionId}/restore`, { method: "POST" }),
+  trash: () => req("/trash"),
+  restoreTrash: (id) => req(`/trash/${id}/restore`, { method: "POST" }),
+  purgeTrash: (id) => req(`/trash/${id}`, { method: "DELETE" }),
 
   login: (dni, password) => req("/login", { method: "POST", body: password ? { dni, password } : { dni } }),
   logout: () => req("/logout", { method: "POST" }),
