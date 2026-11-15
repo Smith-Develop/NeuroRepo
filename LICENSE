@@ -1,0 +1,29 @@
+NeuroRepo — Licencia de software propietario
+
+Copyright (c) 2026 Smith Grisales. Todos los derechos reservados.
+
+Este software, incluido su código fuente, su diseño, su documentación y los elementos gráficos que lo
+acompañan (en adelante, «el Software»), es obra de Smith Grisales y está protegido por la normativa de
+propiedad intelectual.
+
+1. Uso. El Software solo puede instalarse y utilizarse por las personas u organizaciones a las que el
+   autor haya autorizado expresamente, y únicamente dentro de los términos de esa autorización. La
+   autorización no transmite la propiedad del Software ni ningún derecho sobre él más allá de su uso.
+
+2. Restricciones. Salvo autorización previa y por escrito del autor, queda prohibido:
+   a) copiar, reproducir o distribuir el Software, total o parcialmente;
+   b) modificarlo, adaptarlo, traducirlo o crear obras derivadas a partir de él;
+   c) venderlo, alquilarlo, sublicenciarlo, cederlo o ponerlo a disposición de terceros;
+   d) eliminar o alterar los avisos de autoría, de copyright o esta licencia.
+
+3. Que el código fuente sea visible públicamente (por ejemplo, en un repositorio de GitHub) no concede
+   ningún permiso de uso, copia, modificación ni distribución.
+
+4. Componentes de terceros. El Software utiliza componentes de código abierto (por ejemplo React,
+   Express, Mongoose, SheetJS, Tesseract o Ollama) que se rigen por sus propias licencias; esta licencia
+   no las modifica. El listado está en el apartado «Acerca de» de la aplicación y en el README.
+
+5. Garantía. El Software se proporciona «tal cual», sin garantías de ningún tipo, expresas o
+   implícitas. El autor no será responsable de los daños que puedan derivarse de su uso.
+
+Para solicitar una autorización o cualquier consulta: https://www.linkedin.com/in/smith-develop

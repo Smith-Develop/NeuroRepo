@@ -36,7 +36,7 @@ Nada depende de APIs de pago.
   `cdn.sheetjs.com`, no desde npm, porque la versión publicada en el registro de npm tiene vulnerabilidades
   sin parchear; la build de SheetJS sí las corrige). `.txt`/`.md`/`.csv` se leen directamente.
 - IA: Ollama vía REST (`fetch`, sin SDK), usada **solo como respaldo** de la búsqueda (ver más abajo).
-  Modelo por defecto `qwen2.5:3b` (`OLLAMA_MODEL`).
+  Modelo por defecto `qwen2.5:1.5b` (`OLLAMA_MODEL`).
 - MongoDB 7. Índice de texto en español sobre los documentos (`server/src/models.js`).
 
 ## Archivos clave
@@ -180,6 +180,15 @@ Nada depende de APIs de pago.
   para elegir carpeta, marca las que tienen mensaje propio e indica de cuál hereda una subcarpeta.
 
 ## Decisiones (no revertir sin motivo)
+- **Licencia propietaria** (`LICENSE`, «todos los derechos reservados», © Smith Grisales). Los dos
+  `package.json` son `"private": true` y `"license": "UNLICENSED"` (antes ponía `ISC`, el valor por
+  defecto de npm, que es una licencia abierta: no volver a ponerla). El repositorio de GitHub sigue
+  público a propósito (el instalador descarga desde ahí), así que la protección es legal, no técnica.
+  `client/src/AboutDialog.jsx` (solo admin, desde la barra lateral) muestra autor, versión (la de
+  `client/package.json`), contacto, el modelo de IA con su licencia (`GET /library` devuelve `model`) y
+  los componentes de terceros; el login lleva un aviso de copyright. El modelo por defecto es
+  `qwen2.5:1.5b` (Apache 2.0) y no `qwen2.5:3b` a propósito: el 3B (y el 72B) van con la Qwen Research
+  License, que restringe el uso comercial; no volver a ponerlo por defecto.
 - **Por qué no es posible un botón que abra el Explorador de Windows real desde dentro de la app**: un
   navegador nunca puede devolverle al servidor una ruta absoluta del disco, y aunque pudiera, el
   contenedor no vería esa ruta sin montarla antes en Docker. Por eso «Vincular biblioteca» es un
@@ -211,7 +220,7 @@ Nada depende de APIs de pago.
 - Docker local: crea `DOCS_HOST_PATH` (carpeta del host con documentos de prueba) y
   `BOOTSTRAP_ADMIN_DNI`/`BOOTSTRAP_ADMIN_PASSWORD` en `.env`, luego
   `docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build` → http://localhost:4000.
-- Desarrollo: `ollama pull qwen2.5:3b`, MongoDB en marcha, `cd server && cp .env.example .env && npm run dev`
+- Desarrollo: `ollama pull qwen2.5:1.5b`, MongoDB en marcha, `cd server && cp .env.example .env && npm run dev`
   (ajusta `LIBRARY_ROOT` a una carpeta local de prueba), `cd client && npm run dev` → http://localhost:5173
   (Vite hace proxy de `/api` a :4000).
 - Comprobaciones rápidas: `node --check server/src/*.js`, `cd client && npm run build`,

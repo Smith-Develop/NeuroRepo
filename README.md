@@ -1,5 +1,7 @@
 # NeuroRepo — Biblioteca de documentos con IA
 
+> © 2026 Smith Grisales. Todos los derechos reservados. Software propietario: ver [Licencia](#licencia).
+
 Gestor documental (parecido a Alfresco Community, con IA) para la documentación del trabajo. Interfaz
 tipo ChatGPT: en el chat se **busca** por coincidencia de texto (la IA solo entra como respaldo si la
 búsqueda no encuentra nada razonable, y nunca redacta la respuesta) y los resultados se pueden **ver**
@@ -63,7 +65,7 @@ Requisito: Docker Desktop (o Docker Engine + el plugin `compose` en Linux).
    BOOTSTRAP_ADMIN_NAME=Administrador
    BOOTSTRAP_ADMIN_DNI=00000000A
    BOOTSTRAP_ADMIN_PASSWORD=pon-aqui-una-contraseña
-   OLLAMA_MODEL=qwen2.5:3b
+   OLLAMA_MODEL=qwen2.5:1.5b
    ```
 2. Arranca:
    ```bash
@@ -131,7 +133,7 @@ una biblioteca real de **2394 documentos** (unos 1500 de ellos imágenes o PDF e
 | `ollama` (modelo cargado) | ~1,2 GB con `qwen2.5:1.5b` | igual (el modelo se queda cargado en memoria) |
 | **Total** | **~1,6 GB** | **~1,7 GB** |
 
-Con `qwen2.5:3b` (el modelo por defecto) Ollama necesita aproximadamente el doble (unos 2,5 GB), y con
+Con `qwen2.5:3b` Ollama necesita aproximadamente el doble (unos 2,5 GB), y con
 `qwen2.5:7b` unos 5–6 GB.
 
 **CPU**
@@ -155,14 +157,14 @@ Con `qwen2.5:3b` (el modelo por defecto) Ollama necesita aproximadamente el dobl
 | Datos de Mongo (volumen) | ~330 MB (el índice de los 2394 documentos ocupa menos de 5 MB) |
 | `.versiones` y `.papelera` | lo que ocupen los archivos guardados (10 versiones por archivo como mucho; la papelera se vacía sola a los 30 días) |
 
-**Equipo recomendado**: 4 núcleos con AVX2, **4 GB de RAM libres** para Docker con `qwen2.5:3b` (2 GB
-bastan con `qwen2.5:1.5b`) y unos **15 GB de disco** para imágenes y modelo, más el espacio de los
+**Equipo recomendado**: 4 núcleos con AVX2, **2 GB de RAM libres** para Docker con `qwen2.5:1.5b`, el modelo por
+defecto (4 GB con `qwen2.5:3b`) y unos **15 GB de disco** para imágenes y modelo, más el espacio de los
 propios documentos.
 
 ## Desarrollo (sin Docker)
 1. Instala **Ollama** (https://ollama.com/download) y el modelo:
    ```bash
-   ollama pull qwen2.5:3b
+   ollama pull qwen2.5:1.5b
    ```
 2. Ten **MongoDB** en marcha (local o Atlas gratis).
 3. (Opcional) Para el OCR, instala `tesseract` con el idioma español y `poppler-utils` (por ejemplo
@@ -185,11 +187,15 @@ dependencias) y `cd client && npm run build`.
 ## Elegir modelo de IA
 Variable `OLLAMA_MODEL` (en `.env` o en `server/.env`). La IA solo se usa como respaldo de la búsqueda
 por texto (reformula la pregunta en palabras clave), así que un modelo pequeño suele bastar:
-| Modelo | RAM aprox. | Notas |
-|---|---|---|
-| `qwen2.5:1.5b` | 1,2 GB (medido) | El más ligero; ~5 s por pregunta en CPU. Suficiente para palabras clave |
-| `qwen2.5:3b` (por defecto) | ~2,5 GB | Algo más fino reformulando |
-| `qwen2.5:7b` | ~5–6 GB | Más preciso; bastante más lento sin GPU |
+| Modelo | RAM aprox. | Licencia del modelo | Notas |
+|---|---|---|---|
+| `qwen2.5:1.5b` (por defecto) | 1,2 GB (medido) | Apache 2.0 | El más ligero; ~5 s por pregunta en CPU. Suficiente para palabras clave |
+| `qwen2.5:3b` | ~2,5 GB | **Qwen Research License** (restringe el uso comercial) | Algo más fino reformulando |
+| `qwen2.5:7b` | ~5–6 GB | Apache 2.0 | Más preciso; bastante más lento sin GPU |
+
+Por eso el modelo por defecto es el `1.5b`: para un uso dentro de una empresa conviene un modelo con
+licencia Apache 2.0 (`qwen2.5:1.5b` o `qwen2.5:7b`), porque la licencia del `3b` solo permite el uso
+comercial con un acuerdo aparte con Alibaba.
 
 Con GPU NVIDIA es mucho más rápido: descomenta el bloque `deploy` en `docker-compose.yml`.
 
@@ -206,6 +212,19 @@ Todas tienen un valor por defecto razonable. En Docker, para cambiarlas añádel
 | `TRASH_RETENTION_DAYS` | 30 | Días que se conserva lo borrado antes de eliminarse solo |
 | `AI_FALLBACK_SCORE` | 0.3 | Por debajo de esta puntuación de búsqueda se recurre a la IA |
 | `OLLAMA_TIMEOUT_MS` | 300000 | Tiempo máximo de espera a la IA |
+
+## Licencia
+NeuroRepo es **software propietario** de Smith Grisales: © 2026, todos los derechos reservados. Solo
+pueden instalarlo y usarlo las personas u organizaciones a las que el autor lo haya autorizado, y está
+prohibido copiarlo, modificarlo o distribuirlo sin su permiso por escrito. Que el código esté visible en
+GitHub no da ningún permiso de uso. Texto completo en [`LICENSE`](LICENSE); para pedir una autorización:
+[linkedin.com/in/smith-develop](https://www.linkedin.com/in/smith-develop).
+
+Usa componentes de código abierto que mantienen sus propias licencias: React, Vite, Express, Mongoose,
+Multer, CORS y pdf-parse (MIT), Mammoth (BSD-2-Clause), SheetJS y Tesseract (Apache-2.0), Poppler
+(GPL-2.0, se ejecuta como programa aparte), MongoDB (SSPL, como servicio aparte) y Ollama (MIT), más el
+modelo de IA que se configure (ver su licencia arriba). El listado también está en «Acerca de», en la
+barra lateral del admin.
 
 ## Estructura
 Ver `CLAUDE.md` para el detalle de archivos, rutas y decisiones. Resumen rápido:

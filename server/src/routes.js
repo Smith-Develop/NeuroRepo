@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 import { Document, FolderConfig, FileVersion, TrashItem, Group } from "./models.js";
 import { requireAdmin, canSeeFolder, folderFilter, folderAncestors } from "./auth.js";
 import { searchDocuments, topScore } from "./search.js";
-import { suggestKeywords } from "./ai.js";
+import { suggestKeywords, MODEL } from "./ai.js";
 import {
   safeResolve, browseFolder, getActiveLibraryPath, setActiveLibraryPath, getAppConfig, LibraryPathError, LIBRARY_ROOT,
   createFolder, renameFolder, saveUploadedFile, restoreVersion, restoreFromTrash, toRootRel,
@@ -221,7 +221,7 @@ r.get("/library", requireAdmin, wrap(async (req, res) => {
   const [totalDocuments, ocrPending, ocrFailed, ocr] = await Promise.all([
     Document.countDocuments(), Document.countDocuments({ ocrStatus: "pending" }), Document.countDocuments({ ocrStatus: "failed" }), ocrAvailable(),
   ]);
-  res.json({ libraryPath: config.libraryPath, lastScanAt: config.lastScanAt, lastScanCount: config.lastScanCount, totalDocuments, ocr, ocrPending, ocrFailed });
+  res.json({ libraryPath: config.libraryPath, lastScanAt: config.lastScanAt, lastScanCount: config.lastScanCount, totalDocuments, ocr, ocrPending, ocrFailed, model: MODEL });
 }));
 
 r.get("/library/browse", requireAdmin, wrap(async (req, res) => {

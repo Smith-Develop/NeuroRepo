@@ -4,7 +4,8 @@ import { api } from "./api";
 import Docu from "./Docu";
 import { toast } from "./toast";
 import { getTheme, setTheme } from "./theme";
-import { ChatIcon, FolderIcon, UsersIcon, ShieldIcon, ActivityIcon, LinkIcon, PlusIcon, LogoutIcon, KeyIcon, XIcon, SunIcon } from "./icons";
+import { ChatIcon, FolderIcon, UsersIcon, ShieldIcon, ActivityIcon, LinkIcon, PlusIcon, LogoutIcon, KeyIcon, XIcon, SunIcon, InfoIcon } from "./icons";
+import AboutDialog from "./AboutDialog";
 
 const ITEMS = [
   { id: "chat", label: "Asistente", Icon: ChatIcon },
@@ -29,6 +30,7 @@ export default function Sidebar({ user, view, documentCount, onNavigate, onLogou
   const [userCount, setUserCount] = useState(null);
   const [library, setLibrary] = useState(null);
   const [pwOpen, setPwOpen] = useState(false);
+  const [aboutOpen, setAboutOpen] = useState(false);
   const [light, setLight] = useState(() => getTheme() === "light");
   const isAdmin = user.role === "admin";
   const initials = (user.name || "?").trim().slice(0, 2).toUpperCase();
@@ -77,6 +79,11 @@ export default function Sidebar({ user, view, documentCount, onNavigate, onLogou
                   <LinkIcon /> <span>Vincular biblioteca</span>
                 </button>
               </li>
+              <li>
+                <button type="button" onClick={() => setAboutOpen(true)}>
+                  <InfoIcon /> <span>Acerca de</span>
+                </button>
+              </li>
             </ul>
           </>
         )}
@@ -102,6 +109,7 @@ export default function Sidebar({ user, view, documentCount, onNavigate, onLogou
         <button type="button" className="btn-icon sm" title="Cerrar sesión" onClick={onLogout}><LogoutIcon /></button>
       </div>
       {pwOpen && createPortal(<PasswordDialog onClose={() => setPwOpen(false)} />, document.body)}
+      {aboutOpen && createPortal(<AboutDialog model={library?.model} onClose={() => setAboutOpen(false)} />, document.body)}
     </aside>
   );
 }

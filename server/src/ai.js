@@ -2,7 +2,7 @@
 // encuentra nada razonable: reformula la pregunta en palabras clave y se reintenta la búsqueda una vez.
 // Nunca redacta una respuesta sobre el contenido de los documentos (evita alucinaciones y uso innecesario de IA).
 const OLLAMA_URL = process.env.OLLAMA_URL || "http://127.0.0.1:11434";
-const MODEL = process.env.OLLAMA_MODEL || "qwen2.5:3b";
+export const MODEL = process.env.OLLAMA_MODEL || "qwen2.5:1.5b";
 const TIMEOUT_MS = Number(process.env.OLLAMA_TIMEOUT_MS) || 300_000;
 
 export class AIError extends Error {}

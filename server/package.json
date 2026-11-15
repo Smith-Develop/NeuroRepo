@@ -1,7 +1,10 @@
 {
   "name": "server",
   "version": "1.0.0",
+  "private": true,
   "description": "",
+  "author": "Smith Grisales",
+  "license": "UNLICENSED",
   "main": "index.js",
   "scripts": {
     "test": "node --test test/*.test.js",
@@ -9,8 +12,6 @@
     "start": "node --env-file-if-exists=.env src/index.js"
   },
   "keywords": [],
-  "author": "",
-  "license": "ISC",
   "type": "module",
   "dependencies": {
     "cors": "^2.8.6",

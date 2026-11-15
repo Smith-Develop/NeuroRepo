@@ -66,6 +66,7 @@ export default function Login({ onLogin }) {
             {busy ? "Entrando…" : "Entrar"}
           </button>
           <p className="legal">¿Problemas para entrar? Contacta con el equipo de sistemas.</p>
+          <p className="legal copyright">© {new Date().getFullYear()} Smith Grisales · Todos los derechos reservados</p>
         </form>
       </div>
     </div>

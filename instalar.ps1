@@ -235,8 +235,8 @@ if ($reconfigurar) {
         }
     } while ([string]::IsNullOrWhiteSpace($carpetaDocs))
 
-    $modelo = Read-Host "Modelo de IA a usar [qwen2.5:3b]"
-    if ([string]::IsNullOrWhiteSpace($modelo)) { $modelo = "qwen2.5:3b" }
+    $modelo = Read-Host "Modelo de IA a usar [qwen2.5:1.5b]"
+    if ([string]::IsNullOrWhiteSpace($modelo)) { $modelo = "qwen2.5:1.5b" }
 
     $intervalo = Read-Host "Cada cuántos minutos se reindexa la biblioteca [15]"
     if ([string]::IsNullOrWhiteSpace($intervalo)) { $intervalo = "15" }
