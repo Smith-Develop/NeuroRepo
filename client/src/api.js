@@ -40,6 +40,7 @@ export const api = {
   updateFolder: (name, blockedMessage) => req(`/folders/${encodeURIComponent(name)}`, { method: "PATCH", body: { blockedMessage } }),
 
   activity: () => req("/activity"),
+  requestAccess: (folder) => req("/access-requests", { method: "POST", body: { folder } }),
 
   library: () => req("/library"),
   browseLibrary: (path = "") => req(`/library/browse?path=${encodeURIComponent(path)}`),

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
+import { toast } from "./toast";
+import { EditIcon, FolderIcon, RefreshIcon, TrashIcon, UploadIcon } from "./icons";
 
 const join = (base, name) => (base ? `${base}/${name}` : name);
 
@@ -34,6 +36,7 @@ export default function LibraryPicker({ onClose }) {
     try {
       const r = await api.selectLibrary(path);
       setNotice(`Biblioteca vinculada. ${r.indexed} documento(s) indexado(s).`);
+      toast(`Biblioteca vinculada a /${path}`);
       await loadStatus();
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   }
@@ -45,6 +48,7 @@ export default function LibraryPicker({ onClose }) {
     try {
       const r = await api.reindexLibrary();
       setNotice(`Reindexado. ${r.indexed} documento(s) encontrados.`);
+      toast(`Reindexado: ${r.indexed} documento(s)`);
       await loadStatus();
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   }
@@ -56,10 +60,12 @@ export default function LibraryPicker({ onClose }) {
     setError("");
     setNotice("");
     try {
-      await api.createFolder(path, newName.trim());
+      const created = newName.trim();
+      await api.createFolder(path, created);
       setNewName("");
       await browse(path);
       await loadStatus();
+      toast(`Carpeta ${created} creada`);
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   }
 
@@ -72,6 +78,7 @@ export default function LibraryPicker({ onClose }) {
       await api.renameFolder(join(path, name), next.trim());
       await browse(path);
       await loadStatus();
+      toast(`Carpeta ${name} renombrada a ${next.trim()}`);
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   }
 
@@ -83,6 +90,7 @@ export default function LibraryPicker({ onClose }) {
       await api.deleteFolder(join(path, name));
       await browse(path);
       await loadStatus();
+      toast(`Carpeta ${name} eliminada`);
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   }
 
@@ -95,6 +103,7 @@ export default function LibraryPicker({ onClose }) {
     try {
       const r = await api.uploadFiles(path, files);
       setNotice(`${r.uploaded} archivo(s) subido(s) a /${path}.`);
+      toast(`${r.uploaded} archivo(s) subido(s) a /${path}`);
       await loadStatus();
     } catch (e) { setError(e.message); } finally {
       setBusy(false);
@@ -111,10 +120,11 @@ export default function LibraryPicker({ onClose }) {
         <div className="drawer-inner">
           <h2>Vincular biblioteca</h2>
           {status && (
-            <p className="hint">
-              Carpeta activa: <strong>/{status.libraryPath || ""}</strong> · {status.totalDocuments} documento(s) indexados
-              {status.lastScanAt ? ` · última reindexación: ${new Date(status.lastScanAt).toLocaleString()}` : ""}
-            </p>
+            <div className="status-box">
+              <div><small>Carpeta activa</small><b>/{status.libraryPath || ""}</b></div>
+              <div><small>Indexados</small><b>{status.totalDocuments}</b></div>
+              <div><small>Última sync</small><b>{status.lastScanAt ? new Date(status.lastScanAt).toLocaleString() : "—"}</b></div>
+            </div>
           )}
           {error && <p className="error" role="alert">{error}</p>}
           {notice && <p className="notice" role="status">{notice}</p>}
@@ -130,10 +140,10 @@ export default function LibraryPicker({ onClose }) {
             {folders.length === 0 && <li className="hint">Sin subcarpetas aquí.</li>}
             {folders.map((name) => (
               <li key={name} className="folder-row">
-                <button type="button" className="ghost small" onClick={() => browse(join(path, name))}>📁 {name}</button>
+                <button type="button" className="ghost small" onClick={() => browse(join(path, name))}><FolderIcon size={14} filled /> {name}</button>
                 <span className="row-actions">
-                  <button type="button" className="link" onClick={() => rename(name)} disabled={busy}>Renombrar</button>
-                  <button type="button" className="link danger" onClick={() => remove(name)} disabled={busy}>Eliminar</button>
+                  <button type="button" className="icon-btn" title="Renombrar" onClick={() => rename(name)} disabled={busy}><EditIcon size={13} /></button>
+                  <button type="button" className="icon-btn" title="Eliminar" onClick={() => remove(name)} disabled={busy}><TrashIcon size={13} /></button>
                 </span>
               </li>
             ))}
@@ -145,10 +155,10 @@ export default function LibraryPicker({ onClose }) {
           </form>
 
           <div className="actions">
-            <button type="button" className="ghost" onClick={() => fileRef.current?.click()} disabled={busy}>Subir archivos aquí</button>
+            <button type="button" className="ghost" onClick={() => fileRef.current?.click()} disabled={busy}><UploadIcon size={14} /> Subir archivos aquí</button>
             <input ref={fileRef} type="file" multiple hidden onChange={uploadHere} />
-            <button type="button" className="ghost" onClick={reindex} disabled={busy}>Reindexar ahora</button>
-            <button type="button" onClick={selectHere} disabled={busy}>Usar esta carpeta</button>
+            <button type="button" className="ghost" onClick={reindex} disabled={busy}><RefreshIcon size={14} /> Reindexar ahora</button>
+            <button type="button" className="btn-accent" onClick={selectHere} disabled={busy}>Usar esta carpeta</button>
           </div>
         </div>
       </aside>

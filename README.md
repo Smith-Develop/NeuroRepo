@@ -1,59 +1,83 @@
-# Mi conocimiento (MERN + IA local)
+# NeuroRepo — Biblioteca de documentos con IA
 
-Un chat (estilo ChatGPT) y una **red de conocimiento** neuronal que crece con lo que aprendes. Usa una IA
-**local** (Ollama + Qwen2.5 3B): sin suscripciones, tus notas no salen de tu máquina.
+Gestor documental (parecido a Alfresco Community, con IA) para la documentación del trabajo. Interfaz
+tipo ChatGPT: en el chat se **busca** por coincidencia de texto (la IA solo entra como respaldo si la
+búsqueda no encuentra nada razonable, y nunca redacta la respuesta) y los resultados se pueden **ver**
+en línea (PDF/imágenes) o **descargar**. También hay un explorador de carpetas (`Documentos`) para
+navegar todo lo indexado, en lista o en tarjetas.
 
-Tiene dos roles:
-- **Administrador**: cuéntale al chat lo que aprendiste (o pégaselo tal cual con el constructor manual 🧱) →
-  la IA propone título, resumen, puntos clave, etiquetas y app → lo corriges y lo guardas. Puede crear
-  usuarios, editar/borrar notas y revisar las sugerencias que mandan los demás.
-- **Usuario normal**: puede **preguntar** en modo «Buscar» (la IA responde en lenguaje natural con lo ya
-  guardado, sin inventar) y **mandar lo que aprendió o un aviso de cambio** al administrador, que decide si
-  lo añade a la red.
+Los documentos viven en una carpeta normal del disco (fuera de la app); Mongo solo guarda el índice
+(metadatos + texto extraído), nunca el archivo en sí.
 
-Desde la barra lateral se muestra u oculta la red de conocimiento, con zoom y arrastre.
+Roles:
+- **Usuario normal**: se da de alta con **nombre + DNI, sin contraseña**; entra escribiendo solo su DNI.
+  Solo puede buscar/consultar las carpetas que le permita su grupo (sin grupo, no ve ninguna).
+- **admin**: mantiene contraseña. Gestiona usuarios, grupos (qué carpetas ve cada uno) y la biblioteca
+  activa («Vincular biblioteca»: elegir carpeta, crear/renombrar/borrar carpetas, subir archivos).
 
-## Opción A: todo con Docker (lo más fácil)
-Requisito: Docker Desktop. Crea un archivo `.env` en la raíz con tu contraseña:
-```
-APP_PASSWORD=pon-aqui-tu-contraseña
-```
-y arranca:
-```bash
-docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
-```
-Abre http://localhost:4000 y entra con usuario `admin` y tu contraseña (así se crea esa primera cuenta; luego puedes crear más usuarios desde «Usuarios» en la barra lateral). La primera vez descarga el modelo (~2 GB) y tarda unos minutos.
+Nada depende de APIs de pago: Mongo, Ollama y el almacenamiento son todos locales.
 
-## Opción B: sin Docker (desarrollo)
-1. Instala **Ollama** (https://ollama.com/download) y descarga el modelo:
+## Puesta en marcha rápida (Docker)
+Requisito: Docker Desktop (o Docker Engine + el plugin `compose` en Linux).
+
+1. Crea un archivo `.env` en la raíz:
+   ```
+   DOCS_HOST_PATH=./documentos-prueba        # carpeta del host con los documentos
+   BOOTSTRAP_ADMIN_NAME=Administrador
+   BOOTSTRAP_ADMIN_DNI=00000000A
+   BOOTSTRAP_ADMIN_PASSWORD=pon-aqui-una-contraseña
+   OLLAMA_MODEL=qwen2.5:3b
+   ```
+2. Arranca:
+   ```bash
+   docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+   ```
+3. Abre http://localhost:4000 y entra con el DNI y la contraseña del admin (así se crea esa primera
+   cuenta). La primera vez descarga el modelo de IA (~2 GB) y tarda unos minutos.
+
+### En Windows, sin usar la terminal
+Si vas a instalarlo en un ordenador con Windows para compartirlo por la red local con compañeros, usa
+el instalador incluido: haz doble clic en [`Instalar.bat`](Instalar.bat). Comprueba si hace falta Docker
+Desktop (lo instala solo si no está, reiniciando el equipo si es necesario — al volver a iniciar sesión
+el propio instalador continúa solo), pide por pantalla la configuración (admin, carpeta de documentos,
+etc.), abre el puerto 4000 en el Firewall de Windows y levanta todo. Al terminar muestra la URL para
+compartir con el resto del equipo en la misma red (`http://<ip-del-pc>:4000`).
+
+## Desarrollo (sin Docker)
+1. Instala **Ollama** (https://ollama.com/download) y el modelo:
    ```bash
    ollama pull qwen2.5:3b
    ```
-2. Ten **MongoDB** en marcha (local o MongoDB Atlas gratis).
+2. Ten **MongoDB** en marcha (local o Atlas gratis).
 3. Backend:
    ```bash
-   cd server && cp .env.example .env && npm install && npm run dev
+   cd server && cp .env.example .env   # ajusta LIBRARY_ROOT a una carpeta local de prueba
+   npm install && npm run dev
    ```
 4. Frontend (otra terminal):
    ```bash
    cd client && npm install && npm run dev
    ```
-   Abre http://localhost:5173
+   Abre http://localhost:5173 (Vite hace proxy de `/api` al backend en :4000).
 
-## Elegir modelo
-Variable `OLLAMA_MODEL` (en `server/.env` o al lanzar `docker compose`):
+## Elegir modelo de IA
+Variable `OLLAMA_MODEL` (en `server/.env` o al lanzar `docker compose`). La IA solo se usa como
+respaldo de la búsqueda por texto (reformula la pregunta en palabras clave), así que un modelo pequeño
+suele bastar:
 | Modelo | RAM aprox. | Notas |
 |---|---|---|
-| `qwen2.5:3b` (por defecto) | 4 GB | ~20 s por nota en CPU, clasifica bien la mayoría |
-| `qwen2.5:7b` | 8 GB | Clasifica mejor los escenarios; más lento sin GPU |
+| `qwen2.5:3b` (por defecto) | 4 GB | Rápido, suficiente para sugerir palabras clave |
+| `qwen2.5:7b` | 8 GB | Algo más preciso; más lento sin GPU |
 
 Con GPU NVIDIA es mucho más rápido: descomenta el bloque `deploy` en `docker-compose.yml`.
 
 ## Estructura
 Ver `CLAUDE.md` para el detalle de archivos, rutas y decisiones. Resumen rápido:
-- `server/src/ai.js` – borrador de nota y respuestas de búsqueda, vía Ollama.
-- `server/src/auth.js` / `authRoutes.js` – login por cookie, usuarios y sugerencias.
-- `server/src/models.js` – Mongoose: `Scenario`, `Note`, `User`, `Session`, `Suggestion`.
-- `server/src/routes.js` – API de notas/escenarios/búsqueda, protegida por rol.
-- `client/src/Network.jsx` – red neuronal SVG con zoom/arrastre · `Chat.jsx` – chat · `Sidebar.jsx` – nav
-  tipo ChatGPT · `Suggestions.jsx` / `Users.jsx` – paneles de admin · `NoteForm.jsx`/`Builder.jsx` – alta de notas.
+- `server/src/library.js` / `indexer.js` – biblioteca activa, escaneo e indexado de documentos.
+- `server/src/search.js` – búsqueda por texto (Mongo `$text` + reordenado). `ai.js` – respaldo de la IA
+  (solo palabras clave, nunca redacta respuestas).
+- `server/src/auth.js` / `authRoutes.js` – login (DNI, o DNI+contraseña para el admin), usuarios, grupos.
+- `server/src/models.js` – Mongoose: `Document`, `Group`, `FolderConfig`, `User`, `Session`.
+- `client/src/Chat.jsx` – búsqueda tipo chat · `Explorer.jsx` – árbol de carpetas (lista/tarjetas) ·
+  `LibraryPicker.jsx` – «Vincular biblioteca» · `Users.jsx`/`Groups.jsx` – paneles de admin.
+- `instalar.ps1` / `Instalar.bat` – instalador para Windows (ver sección de arriba).

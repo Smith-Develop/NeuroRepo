@@ -60,8 +60,10 @@ Nada depende de APIs de pago.
     carpeta sin permiso, devuelve el `blockedMessage` de esa carpeta **sin llamar a la IA**; si no hay nada
     razonable (`score` por debajo de `AI_FALLBACK_SCORE`, por defecto 0.3), pide a la IA mejores palabras
     clave y reintenta una vez.
-  - `GET /documents/:id/view` (inline, PDF/imágenes) y `/download` (adjunto): resuelven `Document.path`
-    contra la biblioteca activa con `safeResolve` y comprueban permiso por `topFolder`.
+  - `GET /documents/:id/view` (inline: pdf, imagen, texto, vídeo, audio — vía `res.sendFile`, que ya
+    soporta `Range` para que los reproductores de vídeo/audio puedan avanzar sin descargar todo) y
+    `/download` (adjunto): resuelven `Document.path` contra la biblioteca activa con `safeResolve` y
+    comprueban permiso por `topFolder`.
   - `GET /folders` / `PATCH /folders/:name` (admin) – carpetas de primer nivel existentes + su
     `blockedMessage`.
   - `GET /library`, `GET /library/browse?path=`, `POST /library/select`, `POST /library/reindex` (admin) –
@@ -83,9 +85,27 @@ Nada depende de APIs de pago.
   si el DNI es del admin y no se manda contraseña, responde `401 {needsPassword:true}` para que el cliente
   pida el segundo campo. `/users`, `/users/import` (texto `Nombre,DNI` por línea, upsert por DNI),
   `/groups` (CRUD con `folders: [String]`).
-- `client/src/Chat.jsx` – un único modo (buscar); cada resultado es una `DocumentCard` con «Ver»/«Descargar».
+- `client/src/Chat.jsx` – un único modo (buscar). Sin mensajes todavía muestra una pantalla de bienvenida
+  (`chat-landing`: Docu grande, saludo con el nombre del usuario, input centrado y sugerencias); en cuanto
+  se manda el primer mensaje pasa al transcript normal, con burbujas estilo Telegram (usuario a la derecha,
+  Docu a la izquierda) y cada resultado como una `DocumentCard`. Mientras se busca, el mensaje `loading`
+  muestra a Docu en modo "buscando" (`<Docu mode="loading">`, ver más abajo) en vez del texto plano.
+- `client/src/Docu.jsx` – la mascota: SVG + CSS puro (sin librerías), con dos modos por `animated`/`mode`:
+  idle (flota, respira, parpadea) y `mode="loading"` (un meneo más juguetón, ojos mirando a los lados y
+  una lupa que rebota) para la espera de una búsqueda. Respeta `prefers-reduced-motion`. Se reutiliza en
+  `Login.jsx` y en la marca de `Sidebar.jsx` para que la identidad sea consistente en toda la app.
+- `client/src/DocumentCard.jsx` – exporta los conjuntos de extensiones (`IMAGE_EXT`, `TEXT_EXT`,
+  `VIDEO_EXT`, `AUDIO_EXT`, `PREVIEWABLE` = pdf/imagen/texto) e `iconFor`/`formatSize`. El nombre del
+  archivo es clickable (abre `DocumentModal`) si es `PREVIEWABLE`; vídeo y audio se reproducen **en la
+  propia tarjeta** (`<video>`/`<audio controls>`, sin modal) tal como pidió el cliente ("se puedan
+  reproducir desde el chat").
+- `client/src/DocumentModal.jsx` – modal de vista previa (pdf en `<iframe>`, imagen en `<img>`, texto
+  leído aparte con `fetch` y mostrado en un `<pre>` con el tema oscuro de la app — así no se ve la página
+  en blanco nativa del navegador). Lo usan tanto `DocumentCard` como el `FileTile` de `Explorer.jsx`, para
+  que el comportamiento sea el mismo en el chat y en el explorador de carpetas.
 - `client/src/Explorer.jsx` – árbol de carpetas construido en memoria a partir de `GET /documents` (filtro
-  de texto en cliente, con `<details>` nativo para expandir/colapsar, sin JS de estado por nodo).
+  de texto en cliente, con `<details>` nativo para expandir/colapsar, sin JS de estado por nodo). En la
+  vista de tarjetas, `FileTile` abre el mismo `DocumentModal` que `DocumentCard`.
 - `client/src/LibraryPicker.jsx` – modal «Vincular biblioteca»: navega subcarpetas de `LIBRARY_ROOT`,
   fija la activa, crea/renombra/borra carpetas (renombrar y borrar usan `prompt()`/`confirm()` nativos —
   en pruebas automatizadas sin interacción real esos diálogos se cancelan solos, es una limitación del

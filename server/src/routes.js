@@ -53,8 +53,10 @@ r.post("/ask", wrap(async (req, res) => {
 
   let found = await searchDocuments(question);
   if (found.length && req.user.role !== "admin" && !allowedFolders(req.user).has(found[0].topFolder)) {
-    return res.json({ results: [], blocked: true, message: await blockedMessageFor(found[0].topFolder) });
+    await logActivity(req, "search.blocked", `${found[0].topFolder}: ${question}`);
+    return res.json({ results: [], blocked: true, folder: found[0].topFolder, message: await blockedMessageFor(found[0].topFolder) });
   }
+  await logActivity(req, "search.query", question);
 
   let usedAI = false;
   if (!found.length || topScore(found) < AI_FALLBACK_SCORE) {
@@ -74,6 +76,15 @@ r.post("/ask", wrap(async (req, res) => {
     found = found.filter((d) => allowed.has(d.topFolder));
   }
   res.json({ results: found.slice(0, 10), usedAI });
+}));
+
+// El usuario pide acceso a una carpeta bloqueada: solo deja constancia en el registro para que
+// el admin la vea y decida (no concede el acceso automáticamente).
+r.post("/access-requests", wrap(async (req, res) => {
+  const folder = text(req.body?.folder, 200);
+  if (!folder) return res.status(400).json({ error: "Falta la carpeta." });
+  await logActivity(req, "access.request", folder);
+  res.status(201).json({ ok: true });
 }));
 
 async function findAccessibleDoc(req, res) {
