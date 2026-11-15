@@ -16,7 +16,10 @@ async function req(path, opts = {}) {
 }
 
 export const api = {
-  documents: (q) => req(`/documents${q ? `?q=${encodeURIComponent(q)}` : ""}`),
+  documents: (q) => req(`/documents?q=${encodeURIComponent(q)}`),
+  filterDocuments: (name, type) => req(`/documents?${new URLSearchParams({ ...(name ? { name } : {}), ...(type !== "all" ? { type } : {}) })}`),
+  summary: () => req("/documents/summary"),
+  children: (folder) => req(`/documents/children?folder=${encodeURIComponent(folder)}`),
   ask: (question) => req("/ask", { method: "POST", body: { question } }),
   viewUrl: (id) => `/api/documents/${id}/view`,
   downloadUrl: (id) => `/api/documents/${id}/download`,

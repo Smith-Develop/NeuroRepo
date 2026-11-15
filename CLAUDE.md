@@ -75,8 +75,12 @@ Nada depende de APIs de pago.
   para reintentar la búsqueda; nunca redacta una respuesta sobre el contenido de los documentos (evita
   alucinaciones y uso innecesario de IA).
 - `server/src/routes.js` – API bajo `/api`:
-  - `GET /documents?q=` (cualquier logueado) → sin `q`, lista ligera (para el árbol de carpetas) filtrada
-    por carpetas permitidas; con `q`, búsqueda con `excerpt` por documento.
+  - `GET /documents?q=` (cualquier logueado) → búsqueda con `excerpt` por documento; `?name=&type=`
+    (pdf/doc/xls/other) → filtro por nombre o carpeta (regex escapada) y tipo, como mucho 200
+    (`{items, truncated}`); sin ninguno de los dos, 400. Ya no hay «lista completa»:
+  - `GET /documents/summary` → `{total, topFolders}` visibles (contador de la barra lateral y ámbito del
+    chat). `GET /documents/children?folder=` → un nivel del árbol: `{folders:[{name, path, count}],
+    files, truncated}` (como mucho 2000 archivos por carpeta). Todo filtrado con `folderFilter`.
   - `POST /ask {question}` (cualquier logueado) → busca por texto; si la mejor coincidencia es de una
     carpeta sin permiso, devuelve el `blockedMessage` de esa carpeta **sin llamar a la IA**; si no hay nada
     razonable (`score` por debajo de `AI_FALLBACK_SCORE`, por defecto 0.3), pide a la IA mejores palabras
@@ -145,9 +149,13 @@ Nada depende de APIs de pago.
   leído aparte con `fetch` y mostrado en un `<pre>` con el tema oscuro de la app — así no se ve la página
   en blanco nativa del navegador). Lo usan tanto `DocumentCard` como el `FileTile` de `Explorer.jsx`, para
   que el comportamiento sea el mismo en el chat y en el explorador de carpetas.
-- `client/src/Explorer.jsx` – árbol de carpetas construido en memoria a partir de `GET /documents` (filtro
-  de texto en cliente, con `<details>` nativo para expandir/colapsar, sin JS de estado por nodo). En la
-  vista de tarjetas, `FileTile` abre el mismo `DocumentModal` que `DocumentCard`.
+- `client/src/Explorer.jsx` – árbol perezoso: `useFolderChildren` pide cada carpeta a
+  `/documents/children` la primera vez que se abre (lista o tarjetas) y la guarda por ruta; cuando
+  `App.jsx` sube `docsVersion` (tras subir, borrar, restaurar o cerrar «Vincular biblioteca») se vuelven a
+  pedir las ya cargadas sin cerrar nada. Con filtro de nombre/tipo pasa a los resultados del servidor
+  (≤200), pintados como árbol en memoria todo desplegado. `App.jsx` ya no carga la lista entera: solo
+  `GET /documents/summary`. En la vista de tarjetas, `FileTile` abre el mismo `DocumentModal` que
+  `DocumentCard`.
 - `client/src/LibraryPicker.jsx` – modal «Vincular biblioteca»: navega subcarpetas de `LIBRARY_ROOT`,
   fija la activa, crea/renombra/borra carpetas (renombrar y borrar usan `prompt()`/`confirm()` nativos —
   en pruebas automatizadas sin interacción real esos diálogos se cancelan solos, es una limitación del
@@ -203,7 +211,10 @@ Nada depende de APIs de pago.
   (Vite hace proxy de `/api` a :4000).
 - Comprobaciones rápidas: `node --check server/src/*.js`, `cd client && npm run build`,
   `cd server && npm test` (`node:test`, sin dependencias: de momento solo `test/permissions.test.js`).
-- Pendientes conocidos: `GET /documents` sin paginar si la biblioteca pasa de ~5000 archivos.
+- Pendientes conocidos: el filtro por nombre (`?name=`) usa una regex sin ancla, que no aprovecha
+  índice (bien hasta decenas de miles de documentos); cada operación del admin espera a reindexar toda la
+  biblioteca antes de responder (unos segundos con ~2400 archivos); LDAP/SSO, si algún día sale de una
+  oficina.
 
 ## Instalador para Windows (`instalar.ps1` / `Instalar.bat`)
 Pensado para pasárselo a alguien sin conocimientos técnicos (p. ej. para usarlo en la red interna de

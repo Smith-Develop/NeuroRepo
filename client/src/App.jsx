@@ -14,14 +14,16 @@ import { AppContext } from "./appContext";
 export default function App() {
   const [user, setUser] = useState(undefined); // undefined = comprobando sesión, null = sin sesión
   const [view, setView] = useState("chat");
-  const [documents, setDocuments] = useState([]);
+  const [summary, setSummary] = useState(null); // {total, topFolders}
+  const [docsVersion, setDocsVersion] = useState(0); // sube cada vez que la biblioteca puede haber cambiado
   const [error, setError] = useState("");
   const [libraryOpen, setLibraryOpen] = useState(false);
   const [chatKey, setChatKey] = useState(0);
 
   const load = useCallback(async () => {
     try {
-      setDocuments(await api.documents());
+      setSummary(await api.summary());
+      setDocsVersion((v) => v + 1);
     } catch (e) { setError(e.message); }
   }, []);
 
@@ -33,7 +35,7 @@ export default function App() {
   async function logout() {
     await api.logout().catch(() => {});
     setUser(null);
-    setDocuments([]);
+    setSummary(null);
     setView("chat");
   }
 
@@ -53,11 +55,11 @@ export default function App() {
   return (
     <AppContext.Provider value={{ user, reloadDocuments: load }}>
     <div className="app">
-      <Sidebar user={user} view={view} documentCount={documents.length} onNavigate={navigate} onLogout={logout} onOpenLibrary={() => setLibraryOpen(true)} />
+      <Sidebar user={user} view={view} documentCount={summary?.total ?? 0} onNavigate={navigate} onLogout={logout} onOpenLibrary={() => setLibraryOpen(true)} />
       <main className="main">
         <section className="view">
-          {view === "chat" && <Chat key={chatKey} user={user} documents={documents} onOpenDocumentos={() => setView("documentos")} />}
-          {view === "documentos" && <Explorer documents={documents} user={user} onOpenLibrary={() => setLibraryOpen(true)} />}
+          {view === "chat" && <Chat key={chatKey} user={user} topFolders={summary?.topFolders ?? []} onOpenDocumentos={() => setView("documentos")} />}
+          {view === "documentos" && <Explorer summary={summary} docsVersion={docsVersion} user={user} onOpenLibrary={() => setLibraryOpen(true)} />}
           {view === "usuarios" && user.role === "admin" && <Users currentUser={user} />}
           {view === "grupos" && user.role === "admin" && <Groups />}
           {view === "registro" && user.role === "admin" && <ActivityLog />}

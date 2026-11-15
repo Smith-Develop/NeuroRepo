@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import DocumentCard from "./DocumentCard";
 import Docu from "./Docu";
@@ -55,7 +55,7 @@ function Composer({ dock, value, onChange, onSend, scope, scopeOptions, onScope,
   );
 }
 
-export default function Chat({ user, documents = [], onOpenDocumentos }) {
+export default function Chat({ user, topFolders = [], onOpenDocumentos }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -63,7 +63,7 @@ export default function Chat({ user, documents = [], onOpenDocumentos }) {
   const threadRef = useRef(null);
 
   const landing = messages.length === 0;
-  const scopeOptions = useMemo(() => [...new Set(documents.map((d) => d.topFolder).filter(Boolean))].sort(), [documents]);
+  const scopeOptions = topFolders;
 
   useEffect(() => { threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: "smooth" }); }, [messages]);
 

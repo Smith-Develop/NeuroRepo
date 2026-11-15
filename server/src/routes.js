@@ -34,15 +34,54 @@ async function blockedMessageFor(folder) {
   return configs[0]?.blockedMessage || DEFAULT_BLOCKED_MESSAGE;
 }
 
-// Lista ligera (para el árbol de carpetas) o búsqueda con puntuación, siempre filtrada por permisos
+const LIST_FIELDS = "filename ext folder topFolder size mtimeMs textOk";
+const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const TYPE_EXTS = { pdf: [".pdf"], doc: [".doc", ".docx"], xls: [".xls", ".xlsx", ".csv"] };
+const FILTER_LIMIT = 200;
+const CHILDREN_FILES_LIMIT = 2000;
+
+// Búsqueda con puntuación (?q=), o filtro por nombre y/o tipo (?name=&type=, como mucho 200), siempre
+// según permisos. Ya no hay "lista completa": el explorador pide cada carpeta con /documents/children.
 r.get("/documents", wrap(async (req, res) => {
   const q = text(req.query.q, 300);
-  if (!q) {
-    return res.json(await Document.find(folderFilter(req.user), "filename ext folder topFolder size mtimeMs textOk")
-      .sort({ folder: 1, filename: 1 }).limit(5000).lean());
+  if (q) {
+    const found = (await searchDocuments(q)).filter((d) => canSeeFolder(req.user, d.folder));
+    return res.json(found.slice(0, 20));
   }
-  const found = (await searchDocuments(q)).filter((d) => canSeeFolder(req.user, d.folder));
-  res.json(found.slice(0, 20));
+  const name = text(req.query.name, 200);
+  const type = text(req.query.type, 10);
+  if (!name && !TYPE_EXTS[type] && type !== "other") return res.status(400).json({ error: "Indica q, name o type." });
+  const and = [folderFilter(req.user)];
+  if (name) and.push({ $or: [{ filename: { $regex: escapeRegex(name), $options: "i" } }, { folder: { $regex: escapeRegex(name), $options: "i" } }] });
+  if (TYPE_EXTS[type]) and.push({ ext: { $in: TYPE_EXTS[type] } });
+  if (type === "other") and.push({ ext: { $nin: Object.values(TYPE_EXTS).flat() } });
+  const items = await Document.find({ $and: and }, LIST_FIELDS).sort({ folder: 1, filename: 1 }).limit(FILTER_LIMIT + 1).lean();
+  res.json({ items: items.slice(0, FILTER_LIMIT), truncated: items.length > FILTER_LIMIT });
+}));
+
+// Total visible y carpetas de primer nivel (contador de la barra lateral y ámbito del chat)
+r.get("/documents/summary", wrap(async (req, res) => {
+  const filter = folderFilter(req.user);
+  const [total, topFolders] = await Promise.all([Document.countDocuments(filter), Document.distinct("topFolder", filter)]);
+  res.json({ total, topFolders: topFolders.filter(Boolean).sort((a, b) => a.localeCompare(b)) });
+}));
+
+// Un nivel del árbol: subcarpetas directas (con cuántos documentos cuelgan de cada una) y archivos
+r.get("/documents/children", wrap(async (req, res) => {
+  const folder = text(req.query.folder, 2000);
+  const below = folder ? { folder: { $regex: `^${escapeRegex(folder)}/` } } : { folder: { $ne: "" } };
+  const [groups, files] = await Promise.all([
+    Document.aggregate([{ $match: { $and: [folderFilter(req.user), below] } }, { $group: { _id: "$folder", n: { $sum: 1 } } }]),
+    Document.find({ $and: [folderFilter(req.user), { folder }] }, LIST_FIELDS).sort({ filename: 1 }).limit(CHILDREN_FILES_LIMIT + 1).lean(),
+  ]);
+  const counts = new Map();
+  const skip = folder ? folder.length + 1 : 0;
+  for (const { _id, n } of groups) {
+    const name = _id.slice(skip).split("/")[0];
+    counts.set(name, (counts.get(name) || 0) + n);
+  }
+  const folders = [...counts].sort((a, b) => a[0].localeCompare(b[0])).map(([name, count]) => ({ name, path: folder ? `${folder}/${name}` : name, count }));
+  res.json({ folder, folders, files: files.slice(0, CHILDREN_FILES_LIMIT), truncated: files.length > CHILDREN_FILES_LIMIT });
 }));
 
 // Chat: busca por coincidencia de texto; solo si no hay nada razonable, pide a la IA mejores palabras clave
@@ -235,8 +274,7 @@ async function renameFolderPermissions(fromRoot, toRoot) {
     const next = group.folders.map(swap);
     if (next.some((f, i) => f !== group.folders[i])) { group.folders = next; await group.save(); }
   }
-  const escaped = from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  for (const cfg of await FolderConfig.find({ folder: { $regex: `^${escaped}(/|$)` } })) {
+  for (const cfg of await FolderConfig.find({ folder: { $regex: `^${escapeRegex(from)}(/|$)` } })) {
     cfg.folder = swap(cfg.folder);
     await cfg.save().catch(() => {}); // ya había un mensaje para la ruta nueva: se queda ese
   }

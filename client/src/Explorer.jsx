@@ -1,4 +1,4 @@
-import { useContext, useMemo, useState } from "react";
+import { Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
 import { badgeFor, formatSize, formatDate, PREVIEWABLE, IMAGE_EXT, VIDEO_EXT, AUDIO_EXT } from "./DocumentCard";
 import DocumentModal from "./DocumentModal";
@@ -11,12 +11,14 @@ import {
 
 const TYPES = [
   { id: "all", label: "Todos" },
-  { id: "pdf", label: "PDF", test: (ext) => ext === ".pdf" },
-  { id: "doc", label: "Word", test: (ext) => ext === ".doc" || ext === ".docx" },
-  { id: "xls", label: "Excel", test: (ext) => [".xls", ".xlsx", ".csv"].includes(ext) },
-  { id: "other", label: "Otros", test: (ext) => !(ext === ".pdf" || ext === ".doc" || ext === ".docx" || [".xls", ".xlsx", ".csv"].includes(ext)) },
+  { id: "pdf", label: "PDF" },
+  { id: "doc", label: "Word" },
+  { id: "xls", label: "Excel" },
+  { id: "other", label: "Otros" },
 ];
+const CHILDREN_LIMIT_NOTE = "Esta carpeta tiene más de 2000 archivos: se muestran los primeros. Usa el filtro para encontrar el resto.";
 
+// Árbol en memoria, solo para los resultados de un filtro (como mucho 200 documentos)
 function buildTree(documents) {
   const root = { folders: new Map(), files: [] };
   for (const doc of documents) {
@@ -40,6 +42,27 @@ const canPreview = (doc) => PREVIEWABLE.has(doc.ext) || VIDEO_EXT.has(doc.ext) |
 function useCanOpen() {
   const { user } = useContext(AppContext);
   return (doc) => user?.role === "admin" || canPreview(doc);
+}
+
+// Carga perezosa del árbol: cada carpeta se pide al servidor la primera vez que se abre
+// (GET /documents/children) y se guarda por ruta. Cuando la biblioteca cambia (subida, papelera,
+// reindexado…) `version` sube y se vuelven a pedir las carpetas ya cargadas, sin cerrar nada.
+function useFolderChildren(version) {
+  const [cache, setCache] = useState(() => new Map());
+  const requested = useRef(new Set());
+  const fetchPath = useCallback((path) => {
+    requested.current.add(path);
+    api.children(path)
+      .then((r) => setCache((c) => new Map(c).set(path, r)))
+      .catch((e) => setCache((c) => new Map(c).set(path, { error: e.message, folders: [], files: [] })));
+  }, []);
+  const ensure = useCallback((path) => { if (!requested.current.has(path)) fetchPath(path); }, [fetchPath]);
+  const firstVersion = useRef(version);
+  useEffect(() => {
+    if (version === firstVersion.current) return;
+    for (const path of requested.current) fetchPath(path);
+  }, [version, fetchPath]);
+  return { cache, ensure };
 }
 
 function FileRow({ doc, depth, onOpen }) {
@@ -76,59 +99,75 @@ function FileRow({ doc, depth, onOpen }) {
   );
 }
 
-function FolderRows({ name, node, depth, openFolders, toggle, onOpen }) {
-  const path = name;
-  const open = openFolders.has(path);
-  const childFolders = [...node.folders.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+function FolderRow({ name, count, depth, open, onToggle }) {
+  return (
+    <tr>
+      <td colSpan={4} style={{ paddingLeft: depth * 24 }}>
+        <button type="button" className="tree-toggle" aria-expanded={open} onClick={onToggle}>
+          <ChevronDownIcon size={14} className="chev" />
+          <span className="fold-ic"><FolderIcon size={15} filled /></span>
+          {name}
+          <span className="badge">{count}</span>
+        </button>
+      </td>
+      <td></td>
+    </tr>
+  );
+}
+
+const TableShell = ({ children }) => (
+  <div className="card" style={{ overflow: "hidden" }}>
+    <table className="table">
+      <thead><tr><th>Nombre</th><th className="hide-sm">Tipo</th><th className="num">Tamaño</th><th className="num hide-sm">Modificado</th><th style={{ width: 100 }}></th></tr></thead>
+      <tbody>{children}</tbody>
+    </table>
+  </div>
+);
+const NoteRow = ({ depth, children }) => <tr><td colSpan={5} className="muted" style={{ paddingLeft: 24 + depth * 24 }}>{children}</td></tr>;
+
+// Un nivel del árbol perezoso: sus subcarpetas (y, si están abiertas, su contenido) y sus archivos
+function LazyRows({ path, depth, tree, open, toggle, onOpen }) {
+  const data = tree.cache.get(path);
+  if (!data) return <NoteRow depth={depth}>Cargando…</NoteRow>;
+  if (data.error) return <NoteRow depth={depth}>{data.error}</NoteRow>;
   return (
     <>
-      <tr>
-        <td colSpan={4} style={{ paddingLeft: depth * 24 }}>
-          <button type="button" className="tree-toggle" aria-expanded={open} onClick={() => toggle(path)}>
-            <ChevronDownIcon size={14} className="chev" />
-            <span className="fold-ic"><FolderIcon size={15} filled /></span>
-            {name.split("/").pop()}
-            <span className="badge">{countAll(node)}</span>
-          </button>
-        </td>
-        <td></td>
-      </tr>
-      {open && childFolders.map(([childName, child]) => (
-        <FolderRows key={childName} name={`${path}/${childName}`} node={child} depth={depth + 1} openFolders={openFolders} toggle={toggle} onOpen={onOpen} />
+      {data.folders.map((f) => (
+        <Fragment key={f.path}>
+          <FolderRow name={f.name} count={f.count} depth={depth} open={open.has(f.path)} onToggle={() => toggle(f.path)} />
+          {open.has(f.path) && <LazyRows path={f.path} depth={depth + 1} tree={tree} open={open} toggle={toggle} onOpen={onOpen} />}
+        </Fragment>
       ))}
-      {open && node.files.map((doc) => <FileRow key={doc._id} doc={doc} depth={depth + 1} onOpen={onOpen} />)}
+      {data.files.map((doc) => <FileRow key={doc._id} doc={doc} depth={depth} onOpen={onOpen} />)}
+      {data.truncated && <NoteRow depth={depth}>{CHILDREN_LIMIT_NOTE}</NoteRow>}
     </>
   );
 }
 
-function ListView({ tree, forceOpen, onOpen }) {
-  const [openFolders, setOpenFolders] = useState(new Set());
-  const effectiveOpen = forceOpen ? new Set([...openFolders, ...allPaths(tree)]) : openFolders;
+function LazyListView({ tree, onOpen }) {
+  const [open, setOpen] = useState(() => new Set());
+  const { ensure } = tree;
+  useEffect(() => { ensure(""); }, [ensure]);
   function toggle(path) {
-    setOpenFolders((s) => { const n = new Set(s); n.has(path) ? n.delete(path) : n.add(path); return n; });
+    if (!open.has(path)) tree.ensure(path);
+    setOpen((s) => { const n = new Set(s); n.has(path) ? n.delete(path) : n.add(path); return n; });
   }
-  const topFolders = [...tree.folders.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  return (
-    <div className="card" style={{ overflow: "hidden" }}>
-      <table className="table">
-        <thead><tr><th>Nombre</th><th className="hide-sm">Tipo</th><th className="num">Tamaño</th><th className="num hide-sm">Modificado</th><th style={{ width: 100 }}></th></tr></thead>
-        <tbody>
-          {topFolders.map(([name, node]) => (
-            <FolderRows key={name} name={name} node={node} depth={0} openFolders={effectiveOpen} toggle={toggle} onOpen={onOpen} />
-          ))}
-          {tree.files.map((doc) => <FileRow key={doc._id} doc={doc} depth={0} onOpen={onOpen} />)}
-        </tbody>
-      </table>
-    </div>
-  );
+  return <TableShell><LazyRows path="" depth={0} tree={tree} open={open} toggle={toggle} onOpen={onOpen} /></TableShell>;
 }
-function allPaths(node, prefix = "") {
-  let out = [];
-  for (const [name, child] of node.folders) {
-    const path = prefix ? `${prefix}/${name}` : name;
-    out.push(path, ...allPaths(child, path));
-  }
-  return out;
+
+// Resultados de un filtro: árbol en memoria, todo desplegado
+function FilteredRows({ node, path, depth, onOpen }) {
+  return (
+    <>
+      {[...node.folders.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([name, child]) => (
+        <Fragment key={name}>
+          <FolderRow name={name} count={countAll(child)} depth={depth} open onToggle={() => {}} />
+          <FilteredRows node={child} path={path ? `${path}/${name}` : name} depth={depth + 1} onOpen={onOpen} />
+        </Fragment>
+      ))}
+      {node.files.map((doc) => <FileRow key={doc._id} doc={doc} depth={depth} onOpen={onOpen} />)}
+    </>
+  );
 }
 
 function FileTile({ doc }) {
@@ -154,64 +193,78 @@ function FileTile({ doc }) {
     </>
   );
 }
-function FolderTile({ name, node, onOpen }) {
+function FolderTile({ name, count, onOpen }) {
   return (
     <button type="button" className="tile" onClick={onOpen} title={name}>
       <span className="pv"><span className="fold-big"><FolderIcon size={34} filled /></span></span>
-      <span className="tx"><b>{name}</b><small>{countAll(node)} elemento(s)</small></span>
+      <span className="tx"><b>{name}</b><small>{count} elemento(s)</small></span>
     </button>
   );
 }
-function GridView({ tree }) {
-  const [path, setPath] = useState([]);
-  const node = useMemo(() => {
-    let n = tree;
-    for (const part of path) { n = n.folders.get(part); if (!n) return tree; }
-    return n;
-  }, [tree, path]);
-  const folders = [...node.folders.entries()].sort((a, b) => a[0].localeCompare(b[0]));
-  const files = node.files;
+
+function LazyGridView({ tree }) {
+  const [path, setPath] = useState("");
+  const { ensure } = tree;
+  useEffect(() => { ensure(path); }, [ensure, path]);
+  const data = tree.cache.get(path);
+  const parts = path ? path.split("/") : [];
   return (
     <div>
-      {path.length > 0 && (
+      {parts.length > 0 && (
         <div className="crumbs">
-          <button type="button" className="link" onClick={() => setPath([])}><HomeIcon size={12} /></button>
-          {path.map((p, i) => (
+          <button type="button" className="link" onClick={() => setPath("")}><HomeIcon size={12} /></button>
+          {parts.map((p, i) => (
             <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
               <ChevronRightIcon size={12} />
-              <button type="button" className="link" onClick={() => setPath(path.slice(0, i + 1))}>{p}</button>
+              <button type="button" className="link" onClick={() => setPath(parts.slice(0, i + 1).join("/"))}>{p}</button>
             </span>
           ))}
         </div>
       )}
-      {folders.length === 0 && files.length === 0 && (
-        <div className="card"><div className="empty"><div className="ic"><SearchIcon size={20} /></div><b>Sin resultados</b>Esta carpeta está vacía.</div></div>
-      )}
-      <div className="grid">
-        {folders.map(([name, child]) => <FolderTile key={name} name={name} node={child} onOpen={() => setPath([...path, name])} />)}
-        {files.map((doc) => <FileTile key={doc._id} doc={doc} />)}
-      </div>
+      {!data ? <p className="help">Cargando…</p>
+        : data.error ? <p className="error">{data.error}</p>
+        : data.folders.length === 0 && data.files.length === 0 ? (
+          <div className="card"><div className="empty"><div className="ic"><SearchIcon size={20} /></div><b>Sin resultados</b>Esta carpeta está vacía.</div></div>
+        ) : (
+          <>
+            <div className="grid">
+              {data.folders.map((f) => <FolderTile key={f.path} name={f.name} count={f.count} onOpen={() => setPath(f.path)} />)}
+              {data.files.map((doc) => <FileTile key={doc._id} doc={doc} />)}
+            </div>
+            {data.truncated && <p className="help">{CHILDREN_LIMIT_NOTE}</p>}
+          </>
+        )}
     </div>
   );
 }
 
-export default function Explorer({ documents, user, onOpenLibrary }) {
+export default function Explorer({ summary, docsVersion, user, onOpenLibrary }) {
   const [filter, setFilter] = useState("");
   const [type, setType] = useState("all");
   const [view, setView] = useState("list");
-
-  const filtered = useMemo(() => {
-    const f = filter.trim().toLowerCase();
-    const typeTest = TYPES.find((t) => t.id === type)?.test;
-    return documents.filter((d) =>
-      (!f || d.filename.toLowerCase().includes(f) || (d.folder || "").toLowerCase().includes(f)) &&
-      (!typeTest || typeTest(d.ext)));
-  }, [documents, filter, type]);
-
-  const tree = useMemo(() => buildTree(filtered), [filtered]);
-  const forceOpen = filter.trim().length > 0 || type !== "all";
-  const topFolders = useMemo(() => new Set(documents.map((d) => (d.folder || "").split("/")[0]).filter(Boolean)), [documents]);
   const [preview, setPreview] = useState(null);
+  const [results, setResults] = useState(null); // {items, truncated} del filtro
+  const [error, setError] = useState("");
+  const tree = useFolderChildren(docsVersion);
+  const name = filter.trim();
+  const filtering = name !== "" || type !== "all";
+
+  // El filtro se resuelve en el servidor (con una pequeña espera mientras se escribe)
+  useEffect(() => {
+    setResults(null);
+    if (!filtering) return;
+    let cancelled = false;
+    const t = setTimeout(() => {
+      api.filterDocuments(name, type)
+        .then((r) => { if (!cancelled) { setResults(r); setError(""); } })
+        .catch((e) => { if (!cancelled) setError(e.message); });
+    }, 250);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [name, type, filtering, docsVersion]);
+
+  const filteredTree = useMemo(() => buildTree(results?.items ?? []), [results]);
+  const total = summary?.total ?? 0;
+  const topCount = summary?.topFolders.length ?? 0;
 
   return (
     <div className="page"><div className="page-inner">
@@ -219,7 +272,7 @@ export default function Explorer({ documents, user, onOpenLibrary }) {
       <div className="page-head">
         <div>
           <h1>Documentos</h1>
-          <p>{documents.length} documentos en {topFolders.size} carpeta{topFolders.size === 1 ? "" : "s"}</p>
+          <p>{total} documentos en {topCount} carpeta{topCount === 1 ? "" : "s"}</p>
         </div>
         {user?.role === "admin" && onOpenLibrary && (
           <div className="actions">
@@ -239,16 +292,23 @@ export default function Explorer({ documents, user, onOpenLibrary }) {
           <button type="button" className={view === "grid" ? "on" : ""} onClick={() => setView("grid")}><GridIcon size={14} />Tarjetas</button>
         </div>
       </div>
+      {error && <p className="error" role="alert">{error}</p>}
 
-      {documents.length === 0 && (
+      {summary && total === 0 ? (
         <div className="card"><div className="empty"><div className="ic"><FolderIcon size={20} /></div><b>Sin documentos</b>Todavía no hay nada indexado en tu biblioteca.</div></div>
-      )}
-      {documents.length > 0 && filtered.length === 0 && (
-        <div className="card"><div className="empty"><div className="ic"><SearchIcon size={20} /></div><b>Sin resultados</b>Prueba con otro nombre o quita los filtros.</div></div>
-      )}
-      {filtered.length > 0 && (view === "list"
-        ? <ListView tree={tree} forceOpen={forceOpen} onOpen={setPreview} />
-        : <GridView tree={tree} />)}
+      ) : filtering ? (
+        !results ? <p className="help">Buscando…</p>
+          : results.items.length === 0 ? (
+            <div className="card"><div className="empty"><div className="ic"><SearchIcon size={20} /></div><b>Sin resultados</b>Prueba con otro nombre o quita los filtros.</div></div>
+          ) : (
+            <>
+              {view === "list"
+                ? <TableShell><FilteredRows node={filteredTree} path="" depth={0} onOpen={setPreview} /></TableShell>
+                : <div className="grid">{results.items.map((doc) => <FileTile key={doc._id} doc={doc} />)}</div>}
+              {results.truncated && <p className="help">Se muestran los 200 primeros resultados; afina el filtro para ver el resto.</p>}
+            </>
+          )
+      ) : view === "list" ? <LazyListView tree={tree} onOpen={setPreview} /> : <LazyGridView tree={tree} />}
 
       {user?.role !== "admin" && (
         <div className="callout"><InfoIcon size={16} /><span>Solo ves las carpetas que tu grupo tiene permitidas. Si necesitas acceso a otra, pídeselo a un administrador.</span></div>
