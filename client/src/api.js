@@ -20,6 +20,7 @@ export const api = {
   ask: (question) => req("/ask", { method: "POST", body: { question } }),
   viewUrl: (id) => `/api/documents/${id}/view`,
   downloadUrl: (id) => `/api/documents/${id}/download`,
+  preview: (id) => req(`/documents/${id}/preview`),
 
   login: (dni, password) => req("/login", { method: "POST", body: password ? { dni, password } : { dni } }),
   logout: () => req("/logout", { method: "POST" }),

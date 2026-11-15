@@ -1,6 +1,9 @@
 import { Router } from "express";
 import mongoose from "mongoose";
 import multer from "multer";
+import mammoth from "mammoth";
+import * as XLSX from "xlsx";
+import { readFileSync } from "node:fs";
 import { Document, FolderConfig } from "./models.js";
 import { requireAdmin, allowedFolders } from "./auth.js";
 import { searchDocuments, topScore } from "./search.js";
@@ -101,6 +104,53 @@ r.get("/documents/:id/view", wrap(async (req, res) => {
   const root = await getActiveLibraryPath();
   const abs = safeResolve(root, doc.path);
   res.sendFile(abs);
+}));
+
+// Vista previa de Word/Excel como HTML (el cliente lo pinta en un iframe con sandbox, sin scripts).
+// Las hojas se recortan para que un Excel enorme no bloquee el servidor ni el navegador.
+const SHEET_EXTS = new Set([".xlsx", ".xls", ".csv"]);
+const PREVIEW_MAX_FILE = 30 * 1024 * 1024;
+const PREVIEW_MAX_ROWS = 2000;
+const PREVIEW_MAX_COLS = 50;
+const PREVIEW_MAX_HTML = 8 * 1024 * 1024;
+
+r.get("/documents/:id/preview", wrap(async (req, res) => {
+  const doc = await findAccessibleDoc(req, res);
+  if (!doc) return;
+  if (doc.ext !== ".docx" && !SHEET_EXTS.has(doc.ext)) return res.status(415).json({ error: "Este tipo de archivo no tiene vista previa." });
+  if (doc.size > PREVIEW_MAX_FILE) return res.status(413).json({ error: "El archivo es demasiado grande para la vista previa. Descárgalo para abrirlo." });
+  const abs = safeResolve(await getActiveLibraryPath(), doc.path);
+
+  let sheets;
+  let truncated = false;
+  try {
+    if (doc.ext === ".docx") {
+      sheets = [{ name: "", html: (await mammoth.convertToHtml({ path: abs })).value }];
+    } else {
+      const book = XLSX.read(readFileSync(abs));
+      sheets = book.SheetNames.map((name) => {
+        const ws = book.Sheets[name];
+        if (ws["!ref"]) {
+          const range = XLSX.utils.decode_range(ws["!ref"]);
+          if (range.e.r - range.s.r >= PREVIEW_MAX_ROWS || range.e.c - range.s.c >= PREVIEW_MAX_COLS) {
+            truncated = true;
+            range.e.r = Math.min(range.e.r, range.s.r + PREVIEW_MAX_ROWS - 1);
+            range.e.c = Math.min(range.e.c, range.s.c + PREVIEW_MAX_COLS - 1);
+            ws["!ref"] = XLSX.utils.encode_range(range);
+          }
+        }
+        // sin los atributos data-t/data-v/id por celda, que no hacen falta para verla y triplican el tamaño
+        const html = XLSX.utils.sheet_to_html(ws, { header: "", footer: "" }).replace(/ (?:data-[tv]|id)="[^"]*"/g, "");
+        return { name, html };
+      });
+    }
+  } catch {
+    return res.status(422).json({ error: "No se pudo leer el archivo para la vista previa. Descárgalo para abrirlo." });
+  }
+  if (sheets.reduce((n, s) => n + s.html.length, 0) > PREVIEW_MAX_HTML) {
+    return res.status(413).json({ error: "El documento es demasiado grande para la vista previa. Descárgalo para abrirlo." });
+  }
+  res.json({ kind: doc.ext === ".docx" ? "docx" : "sheet", sheets, truncated, maxRows: PREVIEW_MAX_ROWS, maxCols: PREVIEW_MAX_COLS });
 }));
 
 r.get("/documents/:id/download", wrap(async (req, res) => {

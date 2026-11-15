@@ -14,9 +14,11 @@ export const IMAGE_EXT = new Set([".png", ".jpg", ".jpeg", ".gif", ".webp", ".sv
 export const TEXT_EXT = new Set([".txt", ".md"]);
 export const VIDEO_EXT = new Set([".mp4", ".webm", ".mov", ".mkv", ".m4v"]);
 export const AUDIO_EXT = new Set([".mp3", ".wav", ".m4a", ".flac", ".ogg"]);
-// Se puede abrir en el modal de vista previa (pdf, imagen o texto); vídeo/audio se reproducen
-// directamente donde se muestren, sin necesidad de modal.
-export const PREVIEWABLE = new Set([".pdf", ...IMAGE_EXT, ...TEXT_EXT]);
+// Word/Excel: el servidor los convierte a HTML (`GET /documents/:id/preview`). El .doc antiguo no.
+export const OFFICE_EXT = new Set([".docx", ".xlsx", ".xls", ".csv"]);
+// Se puede abrir en el modal de vista previa (pdf, imagen, texto, Word/Excel); vídeo/audio se
+// reproducen directamente donde se muestren, sin necesidad de modal.
+export const PREVIEWABLE = new Set([".pdf", ...IMAGE_EXT, ...TEXT_EXT, ...OFFICE_EXT]);
 export const badgeFor = (ext) => ({ label: LABELS[ext] || (ext || "").slice(1, 5).toUpperCase() || "FILE", cls: CLASS[ext] || "other" });
 
 export function formatSize(bytes) {

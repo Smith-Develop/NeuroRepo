@@ -406,6 +406,10 @@ tr.file .nm:hover { color: var(--accent-2); }
 .viewer-body video, .viewer-body audio { max-width: 100%; }
 .viewer-body pre { width: 100%; height: 100%; margin: 0; overflow: auto; background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-sm); padding: 16px; font-size: 13px; line-height: 1.6; color: var(--text-2); white-space: pre-wrap; word-break: break-word; }
 .viewer-body .hint { color: var(--text-3); }
+.viewer-body:has(.office-frame) { justify-content: flex-start; align-items: stretch; gap: 10px; }
+.viewer-body iframe.office-frame { flex: 1; min-height: 0; background: var(--surface); border: 1px solid var(--border); }
+.viewer-tabs { align-self: flex-start; max-width: 100%; overflow-x: auto; flex-shrink: 0; }
+.viewer-note { margin: 0; font-size: 12.5px; }
 
 /* ---------- Login ---------- */
 .login { height: 100%; display: grid; grid-template-columns: 1fr 1fr; background: var(--bg); }

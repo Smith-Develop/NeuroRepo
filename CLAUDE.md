@@ -64,6 +64,10 @@ Nada depende de APIs de pago.
     soporta `Range` para que los reproductores de vídeo/audio puedan avanzar sin descargar todo) y
     `/download` (adjunto): resuelven `Document.path` contra la biblioteca activa con `safeResolve` y
     comprueban permiso por `topFolder`.
+  - `GET /documents/:id/preview` (`.docx`/`.xlsx`/`.xls`/`.csv`) → `{kind, sheets:[{name, html}], truncated}`:
+    Word con `mammoth.convertToHtml`, hojas con `XLSX.utils.sheet_to_html` (recortadas a 2000 filas × 50
+    columnas, sin los atributos `data-*`/`id` por celda). Rechaza archivos > 30 MB o HTML > 8 MB. El
+    `.doc` antiguo no tiene vista previa (no hay conversor sin LibreOffice).
   - `GET /folders` / `PATCH /folders/:name` (admin) – carpetas de primer nivel existentes + su
     `blockedMessage`.
   - `GET /library`, `GET /library/browse?path=`, `POST /library/select`, `POST /library/reindex` (admin) –
@@ -99,11 +103,13 @@ Nada depende de APIs de pago.
   una lupa que rebota) para la espera de una búsqueda. Respeta `prefers-reduced-motion`. Se reutiliza en
   `Login.jsx` y en la marca de `Sidebar.jsx` para que la identidad sea consistente en toda la app.
 - `client/src/DocumentCard.jsx` – exporta los conjuntos de extensiones (`IMAGE_EXT`, `TEXT_EXT`,
-  `VIDEO_EXT`, `AUDIO_EXT`, `PREVIEWABLE` = pdf/imagen/texto) e `iconFor`/`formatSize`. El nombre del
+  `VIDEO_EXT`, `AUDIO_EXT`, `OFFICE_EXT`, `PREVIEWABLE` = pdf/imagen/texto/Word/Excel) e `iconFor`/`formatSize`. El nombre del
   archivo es clickable (abre `DocumentModal`) si es `PREVIEWABLE`; vídeo y audio se reproducen **en la
   propia tarjeta** (`<video>`/`<audio controls>`, sin modal) tal como pidió el cliente ("se puedan
   reproducir desde el chat").
-- `client/src/DocumentModal.jsx` – modal de vista previa (pdf en `<iframe>`, imagen en `<img>`, texto
+- `client/src/DocumentModal.jsx` – modal de vista previa (pdf en `<iframe>`; Word/Excel con el HTML de
+  `/preview` en un `<iframe sandbox="" srcDoc>` con CSP `default-src 'none'` — el HTML sale del propio
+  documento, así que nunca se pinta en la página de la app —, con pestañas por hoja; imagen en `<img>`, texto
   leído aparte con `fetch` y mostrado en un `<pre>` con el tema oscuro de la app — así no se ve la página
   en blanco nativa del navegador). Lo usan tanto `DocumentCard` como el `FileTile` de `Explorer.jsx`, para
   que el comportamiento sea el mismo en el chat y en el explorador de carpetas.
@@ -158,8 +164,7 @@ Nada depende de APIs de pago.
   (Vite hace proxy de `/api` a :4000).
 - Comprobaciones rápidas: `node --check server/src/*.js`, `cd client && npm run build`. No hay tests
   automatizados todavía.
-- Pendientes conocidos: sin vista previa en línea de Word/Excel (solo descarga); `GET /documents` sin
-  paginar si la biblioteca pasa de ~5000 archivos.
+- Pendientes conocidos: `GET /documents` sin paginar si la biblioteca pasa de ~5000 archivos.
 
 ## Instalador para Windows (`instalar.ps1` / `Instalar.bat`)
 Pensado para pasárselo a alguien sin conocimientos técnicos (p. ej. para usarlo en la red interna de
