@@ -2,6 +2,9 @@
   Instalador de NeuroRepo para Windows.
 
   Qué hace:
+    0. Si este script se ejecuta solo (por ejemplo, descargando únicamente Instalar.bat +
+       instalar.ps1, sin el resto del proyecto), descarga el proyecto completo desde GitHub
+       (con "git clone" si hay git, o un .zip si no) antes de continuar.
     1. Comprueba si Docker Desktop está instalado y arrancado; si no, lo descarga e instala en
        silencio, programa que este mismo script se vuelva a lanzar solo al reiniciar e iniciar
        sesión de nuevo, y reinicia el equipo.
@@ -11,11 +14,12 @@
     4. Levanta el stack completo con "docker compose" y muestra la URL para compartir.
 
   Pensado para pasárselo a alguien sin conocimientos técnicos: solo tiene que ejecutarlo (o hacer
-  doble clic en Instalar.bat) y responder lo que se le pregunta.
+  doble clic en Instalar.bat) y responder lo que se le pregunta. Ni siquiera hace falta que tenga
+  ya la carpeta del proyecto: con Instalar.bat + instalar.ps1 descargados en cualquier sitio basta.
 #>
 
-$RepoRoot = $PSScriptRoot
-$EnvFile = Join-Path $RepoRoot ".env"
+$RepoUrl = "https://github.com/Smith-Develop/NeuroRepo.git"
+$RepoZipUrl = "https://github.com/Smith-Develop/NeuroRepo/archive/refs/heads/main.zip"
 $ResumeTaskName = "NeuroRepoInstalador"
 
 function Write-Paso($texto) {
@@ -34,6 +38,75 @@ if (-not (Test-Administrador)) {
     Write-Host "Este instalador necesita permisos de administrador. Se va a volver a abrir pidiendo permiso..."
     Start-Process powershell -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$PSCommandPath`"") -Verb RunAs
     exit
+}
+
+function Test-CarpetaProyecto($ruta) {
+    return Test-Path (Join-Path $ruta "docker-compose.yml")
+}
+
+function Descargar-Proyecto {
+    # Si el script ya vive dentro del proyecto (lo clonaste entero, o es la copia que ya
+    # descargamos antes), no hay nada que descargar.
+    if (Test-CarpetaProyecto $PSScriptRoot) {
+        return $PSScriptRoot
+    }
+
+    Write-Paso "Este instalador se ha ejecutado suelto: hace falta descargar NeuroRepo primero."
+    $porDefecto = Join-Path $env:USERPROFILE "NeuroRepo"
+    $destino = Read-Host "¿En qué carpeta lo instalamos? [$porDefecto]"
+    if ([string]::IsNullOrWhiteSpace($destino)) { $destino = $porDefecto }
+
+    if (Test-CarpetaProyecto $destino) {
+        Write-Host "Ya hay una copia de NeuroRepo en '$destino'; se reutiliza." -ForegroundColor Green
+        return $destino
+    }
+    if (Test-Path $destino) {
+        Write-Host ""
+        Write-Host "La carpeta '$destino' ya existe y no parece una instalación de NeuroRepo." -ForegroundColor Red
+        Write-Host "Elige otra carpeta (o vacía/borra esa) y vuelve a ejecutar el instalador." -ForegroundColor Red
+        Read-Host "Pulsa Enter para salir"
+        exit 1
+    }
+
+    $git = Get-Command git -ErrorAction SilentlyContinue
+    if ($git) {
+        Write-Paso "Descargando NeuroRepo desde GitHub con git..."
+        git clone --depth 1 $RepoUrl $destino
+        if ($LASTEXITCODE -ne 0 -or -not (Test-CarpetaProyecto $destino)) {
+            Write-Host "No se pudo clonar el repositorio." -ForegroundColor Red
+            Read-Host "Pulsa Enter para salir"
+            exit 1
+        }
+    } else {
+        Write-Paso "Descargando NeuroRepo desde GitHub (.zip; no hace falta tener git instalado)..."
+        $zip = Join-Path $env:TEMP "NeuroRepo-descarga.zip"
+        $extraido = Join-Path $env:TEMP "NeuroRepo-extraido"
+        try {
+            Invoke-WebRequest -Uri $RepoZipUrl -OutFile $zip -UseBasicParsing
+            if (Test-Path $extraido) { Remove-Item $extraido -Recurse -Force }
+            Expand-Archive -Path $zip -DestinationPath $extraido -Force
+            $carpetaExtraida = Get-ChildItem -Path $extraido -Directory | Select-Object -First 1
+            if (-not $carpetaExtraida) { throw "El .zip descargado no contiene la carpeta esperada." }
+            New-Item -ItemType Directory -Path (Split-Path $destino -Parent) -Force -ErrorAction SilentlyContinue | Out-Null
+            Move-Item -Path $carpetaExtraida.FullName -Destination $destino
+        } catch {
+            Write-Host ""
+            Write-Host "No se pudo descargar/descomprimir NeuroRepo: $($_.Exception.Message)" -ForegroundColor Red
+            Read-Host "Pulsa Enter para salir"
+            exit 1
+        } finally {
+            Remove-Item $zip -Force -ErrorAction SilentlyContinue
+            Remove-Item $extraido -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        if (-not (Test-CarpetaProyecto $destino)) {
+            Write-Host "La descarga terminó pero no parece el proyecto completo." -ForegroundColor Red
+            Read-Host "Pulsa Enter para salir"
+            exit 1
+        }
+    }
+
+    Write-Host "NeuroRepo descargado en '$destino'." -ForegroundColor Green
+    return $destino
 }
 
 function Test-DockerListo {
@@ -91,6 +164,21 @@ function Esperar-DockerArrancando {
         $intentos++
     }
     return Test-DockerListo
+}
+
+# --- 0. Proyecto (descargarlo de GitHub si hace falta) ---
+$RepoRoot = Descargar-Proyecto
+$EnvFile = Join-Path $RepoRoot ".env"
+
+$miCopiaDelScript = Join-Path $RepoRoot "instalar.ps1"
+$rutaActual = (Resolve-Path $PSCommandPath -ErrorAction SilentlyContinue).Path
+$rutaEnRepo = (Resolve-Path $miCopiaDelScript -ErrorAction SilentlyContinue).Path
+if ($rutaEnRepo -and $rutaActual -ne $rutaEnRepo) {
+    # Nos acabamos de descargar: seguimos desde la copia ya instalada, para que a partir de
+    # ahora todo (incluida la reanudación tras reiniciar) apunte siempre a esa carpeta.
+    Write-Paso "Continuando la instalación desde '$RepoRoot'..."
+    Start-Process powershell -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$miCopiaDelScript`"") -Wait
+    exit
 }
 
 # --- 1. Docker ---

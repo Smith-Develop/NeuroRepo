@@ -9,6 +9,15 @@ navegar todo lo indexado, en lista o en tarjetas.
 Los documentos viven en una carpeta normal del disco (fuera de la app); Mongo solo guarda el índice
 (metadatos + texto extraído), nunca el archivo en sí.
 
+<p align="center">
+  <img src="docs/screenshots/login.jpg" width="49%" alt="Pantalla de inicio de sesión" />
+  <img src="docs/screenshots/chat.jpg" width="49%" alt="Asistente de búsqueda (Docu)" />
+</p>
+<p align="center">
+  <img src="docs/screenshots/documentos.jpg" width="49%" alt="Explorador de carpetas" />
+  <img src="docs/screenshots/grupos.jpg" width="49%" alt="Grupos y permisos" />
+</p>
+
 Roles:
 - **Usuario normal**: se da de alta con **nombre + DNI, sin contraseña**; entra escribiendo solo su DNI.
   Solo puede buscar/consultar las carpetas que le permita su grupo (sin grupo, no ve ninguna).
@@ -37,11 +46,28 @@ Requisito: Docker Desktop (o Docker Engine + el plugin `compose` en Linux).
 
 ### En Windows, sin usar la terminal
 Si vas a instalarlo en un ordenador con Windows para compartirlo por la red local con compañeros, usa
-el instalador incluido: haz doble clic en [`Instalar.bat`](Instalar.bat). Comprueba si hace falta Docker
-Desktop (lo instala solo si no está, reiniciando el equipo si es necesario — al volver a iniciar sesión
-el propio instalador continúa solo), pide por pantalla la configuración (admin, carpeta de documentos,
-etc.), abre el puerto 4000 en el Firewall de Windows y levanta todo. Al terminar muestra la URL para
-compartir con el resto del equipo en la misma red (`http://<ip-del-pc>:4000`).
+el instalador incluido. No hace falta tener ya el proyecto descargado ni saber de Git ni de Docker:
+
+1. Descarga solo estos dos archivos (botón derecho → «Guardar enlace como…») en cualquier carpeta:
+   [`Instalar.bat`](https://raw.githubusercontent.com/Smith-Develop/NeuroRepo/main/Instalar.bat) y
+   [`instalar.ps1`](https://raw.githubusercontent.com/Smith-Develop/NeuroRepo/main/instalar.ps1)
+   (o, si ya tienes clonado el repositorio entero, úsalos directamente desde ahí).
+2. Haz doble clic en `Instalar.bat`.
+
+A partir de ahí el instalador hace todo solo, sin más intervención que responder lo que pregunta:
+- Si todavía no tiene el proyecto al lado (es el caso del paso 1), **descarga NeuroRepo entero desde
+  GitHub** él mismo (con `git clone` si hay Git instalado, o un `.zip` si no) en la carpeta que le
+  digas (por defecto `%USERPROFILE%\NeuroRepo`), y continúa la instalación ya desde esa copia.
+- Comprueba si hace falta Docker Desktop (lo instala solo si no está, reiniciando el equipo si es
+  necesario — al volver a iniciar sesión el propio instalador continúa solo donde lo dejó).
+- Pide por pantalla la configuración (nombre/DNI/contraseña del admin, carpeta de documentos, modelo
+  de IA, intervalo de reindexado) y la guarda en `.env`.
+- Abre el puerto 4000 en el Firewall de Windows y levanta todo con `docker compose`.
+- Al terminar muestra la URL para compartir con el resto del equipo en la misma red
+  (`http://<ip-del-pc>:4000`).
+
+Si ya tienes el proyecto entero descargado (por ejemplo, lo clonaste con Git), el instalador detecta
+que ya está ahí y se salta el paso de descarga.
 
 ## Desarrollo (sin Docker)
 1. Instala **Ollama** (https://ollama.com/download) y el modelo:
@@ -80,4 +106,5 @@ Ver `CLAUDE.md` para el detalle de archivos, rutas y decisiones. Resumen rápido
 - `server/src/models.js` – Mongoose: `Document`, `Group`, `FolderConfig`, `User`, `Session`.
 - `client/src/Chat.jsx` – búsqueda tipo chat · `Explorer.jsx` – árbol de carpetas (lista/tarjetas) ·
   `LibraryPicker.jsx` – «Vincular biblioteca» · `Users.jsx`/`Groups.jsx` – paneles de admin.
-- `instalar.ps1` / `Instalar.bat` – instalador para Windows (ver sección de arriba).
+- `instalar.ps1` / `Instalar.bat` – instalador para Windows, capaz de descargar el proyecto desde
+  GitHub por sí solo (ver sección de arriba).

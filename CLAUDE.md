@@ -158,9 +158,20 @@ Nada depende de APIs de pago.
   contraseña del admin; `GET /documents` sin paginar si la biblioteca pasa de ~5000 archivos.
 
 ## Instalador para Windows (`instalar.ps1` / `Instalar.bat`)
-Pensado para pasarle la carpeta del proyecto a alguien sin conocimientos técnicos (p. ej. para usarlo
-en la red interna de una oficina, sin VPS): doble clic en `Instalar.bat` (lanza `instalar.ps1`, que se
-autoeleva a administrador si hace falta).
+Pensado para pasárselo a alguien sin conocimientos técnicos (p. ej. para usarlo en la red interna de
+una oficina, sin VPS), **sin que haga falta tener ya el proyecto descargado**: basta con guardar los
+dos archivos (`Instalar.bat` + `instalar.ps1`, sueltos, descargados por separado) en cualquier carpeta
+y hacer doble clic en `Instalar.bat` (lanza `instalar.ps1`, que se autoeleva a administrador si hace
+falta).
+- `Descargar-Proyecto` (primer paso, antes de nada de Docker): si `$PSScriptRoot` no contiene ya
+  `docker-compose.yml` (es decir, el script se ejecutó suelto, no desde dentro del repo), pregunta en
+  qué carpeta instalarlo (por defecto `%USERPROFILE%\NeuroRepo`) y descarga el proyecto completo desde
+  GitHub (`git clone --depth 1` si hay `git` en el PATH; si no, el `.zip` de la rama `main` vía
+  `Invoke-WebRequest` + `Expand-Archive`). Si el script YA vive dentro de una carpeta con
+  `docker-compose.yml` (lo clonaste entero, o es la copia recién descargada), no descarga nada y la
+  reutiliza. Tras descargar, el script se relanza a sí mismo desde la copia ya instalada (para que la
+  tarea programada de reanudación, más abajo, apunte siempre a esa ruta estable y no a donde se haya
+  descargado el `.ps1` suelto) y el proceso original termina.
 - Si no encuentra `docker` en el PATH: lo descarga e instala en silencio (`Docker Desktop
   Installer.exe install --quiet --accept-license`), programa con `schtasks` (`/SC ONLOGON /RL
   HIGHEST`) que el propio script se vuelva a lanzar solo al iniciar sesión, y reinicia el equipo
