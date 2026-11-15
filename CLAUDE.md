@@ -84,13 +84,15 @@ Nada depende de APIs de pago.
   - `GET /documents/:id/view` (inline: pdf, imagen, texto, vídeo, audio — vía `res.sendFile`, que ya
     soporta `Range` para que los reproductores de vídeo/audio puedan avanzar sin descargar todo) y
     `/download` (adjunto): resuelven `Document.path` contra la biblioteca activa con `safeResolve` y
-    comprueban permiso por `topFolder`.
+    comprueban permiso con `canSeeFolder(user, doc.folder)`.
   - `GET /documents/:id/preview` (`.docx`/`.xlsx`/`.xls`/`.csv`) → `{kind, sheets:[{name, html}], truncated}`:
     Word con `mammoth.convertToHtml`, hojas con `XLSX.utils.sheet_to_html` (recortadas a 2000 filas × 50
     columnas, sin los atributos `data-*`/`id` por celda). Rechaza archivos > 30 MB o HTML > 8 MB. El
     `.doc` antiguo no tiene vista previa (no hay conversor sin LibreOffice).
-  - `GET /folders` / `PATCH /folders/:name` (admin) – carpetas de primer nivel existentes + su
-    `blockedMessage`.
+  - `GET /folders` / `PATCH /folders/:name` (admin) – todas las carpetas con documentos y sus padres, a
+    cualquier profundidad (`{folder, count, blockedMessage}`); `:name` es la ruta codificada (`a%2Fb`).
+    El mensaje que ve un usuario bloqueado es el de la carpeta más concreta que lo tenga
+    (`blockedMessageFor`: la propia o la más cercana hacia arriba).
   - `GET /library`, `GET /library/browse?path=`, `POST /library/select`, `POST /library/reindex` (admin) –
     estado de la biblioteca y el selector «Vincular biblioteca».
   - `POST /library/folders {path,name}`, `PATCH /library/folders {path,newName}`,
@@ -104,11 +106,16 @@ Nada depende de APIs de pago.
     `DELETE /trash/:id` (definitivo).
 - `server/src/models.js` – `Document {path, filename, ext, folder, topFolder, size, mtimeMs,
   extractedText, textOk}` (índice de texto en `filename`/`folder`/`extractedText`), `Group {name,
-  folders: [String]}` (nombres de carpetas de primer nivel, no referencias), `FolderConfig {folder,
+  folders: [String]}` (rutas de carpeta de cualquier profundidad, relativas a la biblioteca activa; no
+  referencias), `FolderConfig {folder,
   blockedMessage}`, `AppConfig` (documento único con la biblioteca activa y el estado del último escaneo),
   `User {name, dni, passwordHash?, role, group}` (`passwordHash` solo lo tiene el admin), `Session`
   (índice TTL, igual que antes).
-- `server/src/auth.js` – `allowedFolders(user)` (Set de carpetas permitidas; vacío si no tiene grupo).
+- `server/src/auth.js` – permisos por ruta: cada ruta del grupo incluye sus subcarpetas
+  (`canSeeFolder`: igual a la ruta o empieza por `ruta + "/"`, así «Cal» no da acceso a «Calidad»);
+  `folderFilter` es lo mismo como filtro de Mongo (regex escapada). Sin grupo, nada; el admin, todo; los
+  archivos sueltos en la raíz solo los ve el admin. Los nombres de primer nivel de antes valen tal cual.
+  Al renombrar una carpeta, `renameFolderPermissions` (routes.js) actualiza grupos y mensajes.
   `bootstrapAdmin()` crea el admin a partir de `BOOTSTRAP_ADMIN_NAME/DNI/PASSWORD` si no existe ninguno.
 - `server/src/authRoutes.js` – `POST /login {dni, password?}`: los usuarios normales entran solo con DNI;
   si el DNI es del admin y no se manda contraseña, responde `401 {needsPassword:true}` para que el cliente
@@ -153,8 +160,11 @@ Nada depende de APIs de pago.
 - `client/src/Login.jsx` – un único campo DNI; si el servidor responde `needsPassword`, aparece el segundo
   campo de contraseña (solo le pasa al admin).
 - `client/src/Users.jsx` – alta nombre+DNI, botón «Importar .txt» (lee el archivo con `FileReader` en el
-  navegador y manda el texto tal cual, sin subida multipart). `client/src/Groups.jsx` – carpetas en vez de
-  apps (checkboxes dinámicos a partir de `GET /folders`) + `blockedMessage` por carpeta.
+  navegador y manda el texto tal cual, sin subida multipart). `client/src/Groups.jsx` – `FolderTree`
+  plegable (solo pinta los hijos de lo abierto: hay cientos de carpetas a varios niveles). En el diálogo
+  del grupo, marcar una carpeta marca —deshabilitadas— sus subcarpetas y quita las que ya estuvieran
+  marcadas por debajo; al editar se abren las ramas de lo marcado. El panel de mensajes usa el mismo árbol
+  para elegir carpeta, marca las que tienen mensaje propio e indica de cuál hereda una subcarpeta.
 
 ## Decisiones (no revertir sin motivo)
 - **Por qué no es posible un botón que abra el Explorador de Windows real desde dentro de la app**: un
@@ -191,8 +201,8 @@ Nada depende de APIs de pago.
 - Desarrollo: `ollama pull qwen2.5:3b`, MongoDB en marcha, `cd server && cp .env.example .env && npm run dev`
   (ajusta `LIBRARY_ROOT` a una carpeta local de prueba), `cd client && npm run dev` → http://localhost:5173
   (Vite hace proxy de `/api` a :4000).
-- Comprobaciones rápidas: `node --check server/src/*.js`, `cd client && npm run build`. No hay tests
-  automatizados todavía.
+- Comprobaciones rápidas: `node --check server/src/*.js`, `cd client && npm run build`,
+  `cd server && npm test` (`node:test`, sin dependencias: de momento solo `test/permissions.test.js`).
 - Pendientes conocidos: `GET /documents` sin paginar si la biblioteca pasa de ~5000 archivos.
 
 ## Instalador para Windows (`instalar.ps1` / `Instalar.bat`)

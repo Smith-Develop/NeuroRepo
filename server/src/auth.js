@@ -67,10 +67,33 @@ export async function attachUser(req, _res, next) {
   next();
 }
 
-// Carpetas (de primer nivel) que puede consultar un usuario normal (vacío si no tiene grupo).
-// El admin no usa esto: lo ve todo.
+// Permisos por carpeta: un grupo guarda rutas de cualquier profundidad ("Calidad" o
+// "Calidad/Procedimientos"), relativas a la biblioteca activa, y cada ruta incluye todas sus
+// subcarpetas. Sin grupo no se ve nada; el admin lo ve todo. Los archivos sueltos en la raíz
+// (folder "") solo los ve el admin.
+const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 export function allowedFolders(user) {
-  return new Set(user.group?.folders ?? []);
+  return user.group?.folders ?? [];
+}
+
+export function canSeeFolder(user, folder = "") {
+  if (user.role === "admin") return true;
+  return allowedFolders(user).some((p) => folder === p || folder.startsWith(`${p}/`));
+}
+
+// Lo mismo que canSeeFolder, como filtro de Mongo sobre Document.folder
+export function folderFilter(user) {
+  if (user.role === "admin") return {};
+  const paths = allowedFolders(user);
+  if (!paths.length) return { _id: { $exists: false } }; // no coincide con nada
+  return { $or: paths.flatMap((p) => [{ folder: p }, { folder: { $regex: `^${escapeRegex(p)}/` } }]) };
+}
+
+// "a/b/c" → ["a", "a/b", "a/b/c"]
+export function folderAncestors(folder = "") {
+  const parts = folder.split("/").filter(Boolean);
+  return parts.map((_, i) => parts.slice(0, i + 1).join("/"));
 }
 
 export function requireAuth(req, res, next) {

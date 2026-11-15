@@ -351,6 +351,25 @@ tr.file .nm:hover { color: var(--accent-2); }
 .stack { display: flex; }
 .stack .avatar { border: 2px solid var(--surface-2); margin-left: -8px; }
 .stack .avatar:first-child { margin-left: 0; }
+/* árbol de carpetas (Grupos) */
+.ftree, .ftree ul { list-style: none; margin: 0; padding: 0; }
+.ftree { max-height: 300px; overflow: auto; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); padding: 4px 0; }
+.ft-row { display: flex; align-items: center; gap: 2px; min-height: 30px; padding-right: 8px; }
+.ft-row:hover { background: var(--surface-3); }
+.ft-chev { width: 22px; height: 22px; flex: none; padding: 0; display: grid; place-items: center; border-radius: 6px; color: var(--text-3); background: none; }
+button.ft-chev:hover { color: var(--text); background: var(--surface-4); }
+.ft-chev .i { transition: transform .12s; }
+.ft-label { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--text-2); cursor: pointer; padding: 3px 4px; border-radius: 6px; }
+.ft-label .nm { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ft-label input { accent-color: var(--accent); margin: 0; }
+.ft-label.inherited { color: var(--text-3); cursor: default; }
+.ft-count { color: var(--text-3); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+button.ft-pick { background: none; border: 0; text-align: left; height: auto; }
+button.ft-pick.on { color: var(--text); background: var(--accent-soft); }
+.picked { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.badge-x { width: 16px; height: 16px; padding: 0; margin-right: -4px; display: grid; place-items: center; border-radius: 4px; background: none; color: var(--text-3); }
+.badge-x:hover { color: var(--text); background: var(--surface-4); }
+.msgtree { padding: 12px 16px 4px; }
 .msgset { padding: 14px 20px; border-bottom: 1px solid var(--border); }
 .msgset:last-child { border-bottom: 0; }
 .msgset .hd { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-size: 13px; font-weight: 500; }

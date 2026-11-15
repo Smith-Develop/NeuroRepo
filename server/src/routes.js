@@ -4,8 +4,8 @@ import multer from "multer";
 import mammoth from "mammoth";
 import * as XLSX from "xlsx";
 import { readFileSync } from "node:fs";
-import { Document, FolderConfig, FileVersion, TrashItem } from "./models.js";
-import { requireAdmin, allowedFolders } from "./auth.js";
+import { Document, FolderConfig, FileVersion, TrashItem, Group } from "./models.js";
+import { requireAdmin, canSeeFolder, folderFilter, folderAncestors } from "./auth.js";
 import { searchDocuments, topScore } from "./search.js";
 import { suggestKeywords } from "./ai.js";
 import {
@@ -26,28 +26,22 @@ const r = Router();
 const wrap = (fn) => (req, res, next) => fn(req, res).catch(next);
 const text = (v, max = Infinity) => (typeof v === "string" ? v.trim().slice(0, max) : "");
 
-function canAccess(user, topFolder) {
-  return user.role === "admin" || allowedFolders(user).has(topFolder);
-}
-
-async function blockedMessageFor(topFolder) {
-  const cfg = await FolderConfig.findOne({ folder: topFolder }, "blockedMessage").lean();
-  return cfg?.blockedMessage || DEFAULT_BLOCKED_MESSAGE;
+// Mensaje de la carpeta más concreta que lo tenga configurado (la propia, o la más cercana hacia arriba)
+async function blockedMessageFor(folder) {
+  const ancestors = folderAncestors(folder);
+  const configs = await FolderConfig.find({ folder: { $in: ancestors }, blockedMessage: { $ne: "" } }, "folder blockedMessage").lean();
+  configs.sort((a, b) => b.folder.length - a.folder.length);
+  return configs[0]?.blockedMessage || DEFAULT_BLOCKED_MESSAGE;
 }
 
 // Lista ligera (para el árbol de carpetas) o búsqueda con puntuación, siempre filtrada por permisos
 r.get("/documents", wrap(async (req, res) => {
   const q = text(req.query.q, 300);
-  const isAdmin = req.user.role === "admin";
-  const allowed = allowedFolders(req.user);
-
   if (!q) {
-    const all = await Document.find({}, "filename ext folder topFolder size mtimeMs textOk")
-      .sort({ folder: 1, filename: 1 }).limit(5000).lean();
-    return res.json(isAdmin ? all : all.filter((d) => allowed.has(d.topFolder)));
+    return res.json(await Document.find(folderFilter(req.user), "filename ext folder topFolder size mtimeMs textOk")
+      .sort({ folder: 1, filename: 1 }).limit(5000).lean());
   }
-  let found = await searchDocuments(q);
-  if (!isAdmin) found = found.filter((d) => allowed.has(d.topFolder));
+  const found = (await searchDocuments(q)).filter((d) => canSeeFolder(req.user, d.folder));
   res.json(found.slice(0, 20));
 }));
 
@@ -57,9 +51,10 @@ r.post("/ask", wrap(async (req, res) => {
   if (!question) return res.status(400).json({ error: "Escribe qué documento buscas." });
 
   let found = await searchDocuments(question);
-  if (found.length && req.user.role !== "admin" && !allowedFolders(req.user).has(found[0].topFolder)) {
-    await logActivity(req, "search.blocked", `${found[0].topFolder}: ${question}`);
-    return res.json({ results: [], blocked: true, folder: found[0].topFolder, message: await blockedMessageFor(found[0].topFolder) });
+  if (found.length && !canSeeFolder(req.user, found[0].folder)) {
+    const folder = found[0].folder;
+    await logActivity(req, "search.blocked", `${folder}: ${question}`);
+    return res.json({ results: [], blocked: true, folder, message: await blockedMessageFor(folder) });
   }
   await logActivity(req, "search.query", question);
 
@@ -76,10 +71,7 @@ r.post("/ask", wrap(async (req, res) => {
     }
   }
 
-  if (req.user.role !== "admin") {
-    const allowed = allowedFolders(req.user);
-    found = found.filter((d) => allowed.has(d.topFolder));
-  }
+  found = found.filter((d) => canSeeFolder(req.user, d.folder));
   res.json({ results: found.slice(0, 10), usedAI });
 }));
 
@@ -96,7 +88,7 @@ async function findAccessibleDoc(req, res) {
   if (!mongoose.isValidObjectId(req.params.id)) { res.status(404).end(); return null; }
   const doc = await Document.findById(req.params.id).lean();
   if (!doc) { res.status(404).end(); return null; }
-  if (!canAccess(req.user, doc.topFolder)) { res.status(403).json({ error: "No tienes permiso para este documento." }); return null; }
+  if (!canSeeFolder(req.user, doc.folder)) { res.status(403).json({ error: "No tienes permiso para este documento." }); return null; }
   return doc;
 }
 
@@ -163,16 +155,21 @@ r.get("/documents/:id/download", wrap(async (req, res) => {
   res.download(abs, doc.filename);
 }));
 
-// Carpetas de primer nivel existentes + su mensaje de bloqueo (para el panel de Grupos)
+// Todas las carpetas con documentos (y sus carpetas padre), a cualquier profundidad, con su mensaje
+// de bloqueo y cuántos documentos cuelgan de cada una (para el árbol del panel de Grupos)
 r.get("/folders", requireAdmin, wrap(async (req, res) => {
-  const names = (await Document.distinct("topFolder")).filter(Boolean).sort();
+  const counts = new Map();
+  for (const { _id, n } of await Document.aggregate([{ $group: { _id: "$folder", n: { $sum: 1 } } }])) {
+    for (const f of folderAncestors(_id || "")) counts.set(f, (counts.get(f) || 0) + n);
+  }
+  const names = [...counts.keys()].sort((a, b) => a.localeCompare(b));
   const configs = await FolderConfig.find({ folder: { $in: names } }).lean();
   const byName = new Map(configs.map((c) => [c.folder, c.blockedMessage]));
-  res.json(names.map((folder) => ({ folder, blockedMessage: byName.get(folder) || "" })));
+  res.json(names.map((folder) => ({ folder, count: counts.get(folder), blockedMessage: byName.get(folder) || "" })));
 }));
 
 r.patch("/folders/:name", requireAdmin, wrap(async (req, res) => {
-  const folder = text(req.params.name, 200);
+  const folder = text(req.params.name, 1000);
   const blockedMessage = text(req.body?.blockedMessage, 300);
   const cfg = await FolderConfig.findOneAndUpdate({ folder }, { blockedMessage }, { upsert: true, returnDocument: "after" });
   await logActivity(req, "folder.blocked-message", folder);
@@ -225,6 +222,26 @@ r.post("/library/folders", requireAdmin, wrap(async (req, res) => {
   }
 }));
 
+// Group.folders y FolderConfig guardan rutas relativas a la biblioteca activa (renameFolder trabaja con
+// rutas relativas a LIBRARY_ROOT): al renombrar, los permisos y mensajes siguen a la carpeta.
+async function renameFolderPermissions(fromRoot, toRoot) {
+  const base = (await getAppConfig()).libraryPath;
+  const rel = (p) => (!base ? p : p.startsWith(`${base}/`) ? p.slice(base.length + 1) : null);
+  const from = rel(fromRoot);
+  const to = rel(toRoot);
+  if (!from || !to) return;
+  const swap = (f) => (f === from ? to : f.startsWith(`${from}/`) ? to + f.slice(from.length) : f);
+  for (const group of await Group.find()) {
+    const next = group.folders.map(swap);
+    if (next.some((f, i) => f !== group.folders[i])) { group.folders = next; await group.save(); }
+  }
+  const escaped = from.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  for (const cfg of await FolderConfig.find({ folder: { $regex: `^${escaped}(/|$)` } })) {
+    cfg.folder = swap(cfg.folder);
+    await cfg.save().catch(() => {}); // ya había un mensaje para la ruta nueva: se queda ese
+  }
+}
+
 r.patch("/library/folders", requireAdmin, wrap(async (req, res) => {
   let renamed;
   try {
@@ -233,6 +250,7 @@ r.patch("/library/folders", requireAdmin, wrap(async (req, res) => {
     return res.status(400).json({ error: e instanceof LibraryPathError ? e.message : "No se pudo renombrar la carpeta." });
   }
   await renameVersionPaths(renamed.from, renamed.to);
+  await renameFolderPermissions(renamed.from, renamed.to);
   await scanLibrary();
   await logActivity(req, "folder.rename", `/${renamed.from} → /${renamed.to}`);
   res.json({ path: renamed.to });
