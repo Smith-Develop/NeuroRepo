@@ -3,7 +3,8 @@ import { createPortal } from "react-dom";
 import { api } from "./api";
 import Docu from "./Docu";
 import { toast } from "./toast";
-import { ChatIcon, FolderIcon, UsersIcon, ShieldIcon, ActivityIcon, LinkIcon, PlusIcon, LogoutIcon, KeyIcon, XIcon } from "./icons";
+import { getTheme, setTheme } from "./theme";
+import { ChatIcon, FolderIcon, UsersIcon, ShieldIcon, ActivityIcon, LinkIcon, PlusIcon, LogoutIcon, KeyIcon, XIcon, SunIcon } from "./icons";
 
 const ITEMS = [
   { id: "chat", label: "Asistente", Icon: ChatIcon },
@@ -28,6 +29,7 @@ export default function Sidebar({ user, view, documentCount, onNavigate, onLogou
   const [userCount, setUserCount] = useState(null);
   const [library, setLibrary] = useState(null);
   const [pwOpen, setPwOpen] = useState(false);
+  const [light, setLight] = useState(() => getTheme() === "light");
   const isAdmin = user.role === "admin";
   const initials = (user.name || "?").trim().slice(0, 2).toUpperCase();
 
@@ -86,6 +88,13 @@ export default function Sidebar({ user, view, documentCount, onNavigate, onLogou
           <div className="meter"><i /></div>
         </div>
       )}
+      <label className="check theme-toggle">
+        <span className="lbl"><SunIcon /> Modo claro</span>
+        <span className="switch">
+          <input type="checkbox" checked={light} onChange={(e) => { setTheme(e.target.checked ? "light" : "dark"); setLight(e.target.checked); }} />
+          <span />
+        </span>
+      </label>
       <div className="user-row">
         <span className="avatar sm">{initials}</span>
         <span className="who"><b>{user.name}</b><small>{isAdmin ? "Administrador" : "Usuario"}</small></span>

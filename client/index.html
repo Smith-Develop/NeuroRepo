@@ -5,6 +5,10 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Biblioteca de documentos</title>
+    <script>
+      // tema guardado (ver src/theme.js), aplicado antes de pintar para que no haya un parpadeo oscuro
+      try { if (localStorage.getItem("neurorepo-theme") === "light") document.documentElement.dataset.theme = "light"; } catch {}
+    </script>
   </head>
   <body>
     <div id="root"></div>

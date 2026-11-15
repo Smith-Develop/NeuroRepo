@@ -26,7 +26,12 @@ Nada depende de APIs de pago.
 
 ## Stack
 - `server/` Node 22 + Express 5 + Mongoose 9 (ESM, sin TypeScript).
-- `client/` React 19 + Vite, sin librerías de UI ni de gráficos. CSS plano en `src/index.css` (tema oscuro).
+- `client/` React 19 + Vite, sin librerías de UI ni de gráficos. CSS plano en `src/index.css`: tema oscuro por defecto y
+  modo claro con `:root[data-theme="light"]`, que redefine los mismos tokens. Ningún color va fijo en
+  las reglas: todo lo que depende del tema es una variable (`--folder`, `--glass`, `--overlay`…). El
+  toggle está al pie de `Sidebar.jsx`; `src/theme.js` guarda la preferencia en `localStorage` y un
+  `<script>` en `index.html` la aplica antes de pintar (sin parpadeo). El HTML de la vista previa de
+  Word/Excel lee los tokens en el momento de abrirse, así que también sale en el tema activo.
 - Extracción de texto: `pdf-parse` (PDF), `mammoth` (`.docx`), `xlsx` (SheetJS — instalado desde
   `cdn.sheetjs.com`, no desde npm, porque la versión publicada en el registro de npm tiene vulnerabilidades
   sin parchear; la build de SheetJS sí las corrige). `.txt`/`.md`/`.csv` se leen directamente.
@@ -146,7 +151,7 @@ Nada depende de APIs de pago.
 - `client/src/DocumentModal.jsx` – modal de vista previa (pdf en `<iframe>`; Word/Excel con el HTML de
   `/preview` en un `<iframe sandbox="" srcDoc>` con CSP `default-src 'none'` — el HTML sale del propio
   documento, así que nunca se pinta en la página de la app —, con pestañas por hoja; imagen en `<img>`, texto
-  leído aparte con `fetch` y mostrado en un `<pre>` con el tema oscuro de la app — así no se ve la página
+  leído aparte con `fetch` y mostrado en un `<pre>` con los colores del tema activo — así no se ve la página
   en blanco nativa del navegador). Lo usan tanto `DocumentCard` como el `FileTile` de `Explorer.jsx`, para
   que el comportamiento sea el mismo en el chat y en el explorador de carpetas.
 - `client/src/Explorer.jsx` – árbol perezoso: `useFolderChildren` pide cada carpeta a

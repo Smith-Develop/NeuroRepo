@@ -48,6 +48,8 @@ Nada depende de APIs de pago: Mongo, Ollama, el OCR y el almacenamiento son todo
   carpeta (o el de la carpeta superior más cercana), y puede pulsar «Solicitar acceso».
 - **Registro** de quién consultó, subió, borró o cambió qué (solo lo ve el admin).
 - `Documentos` carga cada carpeta al abrirla, así que sigue yendo ágil con bibliotecas grandes.
+- **Modo claro y oscuro**: el interruptor «Modo claro», al pie de la barra lateral, cambia el tema; cada
+  navegador recuerda su elección (por defecto, oscuro).
 
 Límite a tener en cuenta: las versiones y la papelera solo cubren lo que se hace **desde la app**. Si
 alguien edita o borra un archivo directamente en la carpeta del servidor, ese cambio no deja copia.
