@@ -1,18 +1,31 @@
 import { useEffect, useRef, useState } from "react";
 import { onToast } from "./toast";
+import { CheckIcon } from "./icons";
+
+let seq = 0;
 
 export default function Toaster() {
-  const [message, setMessage] = useState(null);
-  const timer = useRef(null);
+  const [items, setItems] = useState([]);
+  const timers = useRef(new Map());
 
   useEffect(() => onToast((message) => {
-    setMessage(message);
-    clearTimeout(timer.current);
-    timer.current = setTimeout(() => setMessage(null), 2200);
+    const id = ++seq;
+    setItems((all) => [...all, { id, message, out: false }]);
+    const t = setTimeout(() => {
+      setItems((all) => all.map((it) => (it.id === id ? { ...it, out: true } : it)));
+      setTimeout(() => setItems((all) => all.filter((it) => it.id !== id)), 200);
+    }, 2600);
+    timers.current.set(id, t);
   }), []);
 
-  if (!message) return null;
   return (
-    <div className="toast notice" role="status" onClick={() => setMessage(null)}>{message}</div>
+    <div className="toasts" aria-live="polite">
+      {items.map((it) => (
+        <div key={it.id} className={`toast${it.out ? " out" : ""}`}>
+          <span className="ti"><CheckIcon size={13} /></span>
+          <span>{it.message}</span>
+        </div>
+      ))}
+    </div>
   );
 }

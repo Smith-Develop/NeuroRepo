@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { toast } from "./toast";
-import { FolderIcon } from "./icons";
+import { DbIcon, XIcon, HomeIcon, ChevronRightIcon, EditIcon, TrashIcon, PlusIcon, UploadIcon, RefreshIcon } from "./icons";
 
 const join = (base, name) => (base ? `${base}/${name}` : name);
 
@@ -12,7 +12,6 @@ export default function LibraryPicker({ onClose }) {
   const [newName, setNewName] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  const [notice, setNotice] = useState("");
   const fileRef = useRef(null);
 
   async function loadStatus() {
@@ -26,39 +25,32 @@ export default function LibraryPicker({ onClose }) {
       setFolders(r.folders);
     } catch (e) { setError(e.message); }
   }
-
   useEffect(() => { loadStatus(); browse(""); }, []);
 
   async function selectHere() {
     setBusy(true);
     setError("");
-    setNotice("");
     try {
       const r = await api.selectLibrary(path);
-      setNotice(`Biblioteca vinculada. ${r.indexed} documento(s) indexado(s).`);
-      toast(`Biblioteca vinculada a /${path}`);
+      toast(`Biblioteca vinculada a /${path} · ${r.indexed} documento(s) indexado(s)`);
       await loadStatus();
+      onClose();
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   }
-
   async function reindex() {
     setBusy(true);
     setError("");
-    setNotice("");
     try {
       const r = await api.reindexLibrary();
-      setNotice(`Reindexado. ${r.indexed} documento(s) encontrados.`);
       toast(`Reindexado: ${r.indexed} documento(s)`);
       await loadStatus();
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   }
-
   async function createHere(e) {
     e.preventDefault();
     if (!newName.trim()) return;
     setBusy(true);
     setError("");
-    setNotice("");
     try {
       const created = newName.trim();
       await api.createFolder(path, created);
@@ -68,7 +60,6 @@ export default function LibraryPicker({ onClose }) {
       toast(`Carpeta ${created} creada`);
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   }
-
   async function rename(name) {
     const next = prompt(`Nuevo nombre para «${name}»:`, name);
     if (!next || next.trim() === name) return;
@@ -81,7 +72,6 @@ export default function LibraryPicker({ onClose }) {
       toast(`Carpeta ${name} renombrada a ${next.trim()}`);
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   }
-
   async function remove(name) {
     if (!confirm(`¿Borrar la carpeta «${name}» y todo su contenido? Esto no se puede deshacer.`)) return;
     setBusy(true);
@@ -93,16 +83,13 @@ export default function LibraryPicker({ onClose }) {
       toast(`Carpeta ${name} eliminada`);
     } catch (e) { setError(e.message); } finally { setBusy(false); }
   }
-
   async function uploadHere(e) {
     const files = [...(e.target.files || [])];
     if (!files.length) return;
     setBusy(true);
     setError("");
-    setNotice("");
     try {
       const r = await api.uploadFiles(path, files);
-      setNotice(`${r.uploaded} archivo(s) subido(s) a /${path}.`);
       toast(`${r.uploaded} archivo(s) subido(s) a /${path}`);
       await loadStatus();
     } catch (e) { setError(e.message); } finally {
@@ -114,51 +101,57 @@ export default function LibraryPicker({ onClose }) {
   const crumbs = path ? path.split("/") : [];
 
   return (
-    <div className="modal-backdrop" onClick={onClose}>
-      <aside className="drawer" aria-label="Vincular biblioteca" onClick={(e) => e.stopPropagation()}>
-        <button className="close" onClick={onClose} aria-label="Cerrar">×</button>
-        <h2>Vincular biblioteca</h2>
-        {status && (
-          <p className="status-line">
-            Carpeta activa: <strong>/{status.libraryPath || ""}</strong> · {status.totalDocuments} documento(s) indexados
-            {status.lastScanAt ? ` · última reindexación: ${new Date(status.lastScanAt).toLocaleString()}` : ""}
-          </p>
-        )}
-        {error && <p className="error" role="alert">{error}</p>}
-        {notice && <p className="notice" role="status">{notice}</p>}
-
-        <div className="breadcrumbs">
-          <button type="button" className="link" onClick={() => browse("")}>raíz</button>
-          {crumbs.map((c, i) => (
-            <span key={i}> / <button type="button" className="link" onClick={() => browse(crumbs.slice(0, i + 1).join("/"))}>{c}</button></span>
-          ))}
+    <div className="overlay" role="dialog" aria-modal="true" aria-labelledby="libT" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="dialog">
+        <div className="dlg-head">
+          <div className="fold-ic" style={{ background: "var(--accent-soft)", color: "var(--accent-2)" }}><DbIcon size={16} /></div>
+          <div className="tt"><h3 id="libT">Vincular biblioteca</h3><p>Elige la carpeta del servidor que Docu debe indexar.</p></div>
+          <button type="button" className="btn-icon" onClick={onClose} aria-label="Cerrar"><XIcon /></button>
         </div>
-
-        <ul className="folder-browser">
-          {folders.length === 0 && <li className="hint">Sin subcarpetas aquí.</li>}
-          {folders.map((name) => (
-            <li key={name} className="folder-row">
-              <button type="button" className="ghost small" onClick={() => browse(join(path, name))}><FolderIcon size={14} /> {name}</button>
-              <span className="row-actions">
-                <button type="button" className="link" onClick={() => rename(name)} disabled={busy}>Renombrar</button>
-                <button type="button" className="link danger" onClick={() => remove(name)} disabled={busy}>Eliminar</button>
+        <div className="dlg-body">
+          {status && (
+            <div className="status-box">
+              <div><small>Carpeta activa</small><b>/{status.libraryPath || ""}</b></div>
+              <div><small>Indexados</small><b>{status.totalDocuments}</b></div>
+              <div><small>Última sync</small><b>{status.lastScanAt ? new Date(status.lastScanAt).toLocaleString("es-ES", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }) : "Nunca"}</b></div>
+            </div>
+          )}
+          {error && <p className="error" role="alert">{error}</p>}
+          <div className="crumbs" style={{ margin: 0 }}>
+            <button type="button" className="link" onClick={() => browse("")}><HomeIcon size={12} /> raíz</button>
+            {crumbs.map((c, i) => (
+              <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <ChevronRightIcon size={12} />
+                <button type="button" className="link" onClick={() => browse(crumbs.slice(0, i + 1).join("/"))}>{c}</button>
               </span>
-            </li>
-          ))}
-        </ul>
-
-        <form className="new-folder-row" onSubmit={createHere}>
-          <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Nombre de la nueva carpeta" maxLength={200} />
-          <button type="submit" className="ghost small" disabled={busy || !newName.trim()}>Crear carpeta</button>
-        </form>
-
-        <div className="actions">
-          <button type="button" className="ghost" onClick={() => fileRef.current?.click()} disabled={busy}>Subir archivos aquí</button>
-          <input ref={fileRef} type="file" multiple hidden onChange={uploadHere} />
-          <button type="button" className="ghost" onClick={reindex} disabled={busy}>Reindexar ahora</button>
-          <button type="button" onClick={selectHere} disabled={busy}>Usar esta carpeta</button>
+            ))}
+          </div>
+          <div className="folder-list">
+            {folders.length === 0 && <div className="fr"><span className="help">Sin subcarpetas aquí.</span></div>}
+            {folders.map((name) => (
+              <div className="fr" key={name}>
+                <span className="fold-ic" style={{ width: 26, height: 26 }}><DbIcon size={13} /></span>
+                <button type="button" className="nm" style={{ textAlign: "left" }} onClick={() => browse(join(path, name))}>{name}</button>
+                <span className="acts">
+                  <button type="button" className="btn-icon sm" title="Renombrar" onClick={() => rename(name)} disabled={busy}><EditIcon size={14} /></button>
+                  <button type="button" className="btn-icon sm" title="Eliminar" onClick={() => remove(name)} disabled={busy}><TrashIcon size={14} /></button>
+                </span>
+              </div>
+            ))}
+          </div>
+          <form className="inline" onSubmit={createHere}>
+            <input className="input" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Nombre de la nueva carpeta" maxLength={200} aria-label="Nueva carpeta" />
+            <button type="submit" className="btn btn-secondary" disabled={busy || !newName.trim()}><PlusIcon size={14} />Crear</button>
+          </form>
         </div>
-      </aside>
+        <div className="dlg-foot">
+          <button type="button" className="btn btn-ghost" onClick={() => fileRef.current?.click()} disabled={busy}><UploadIcon size={14} />Subir aquí</button>
+          <input ref={fileRef} type="file" multiple hidden onChange={uploadHere} />
+          <button type="button" className="btn btn-ghost" onClick={reindex} disabled={busy}><RefreshIcon size={14} />Reindexar</button>
+          <span className="grow" />
+          <button type="button" className="btn btn-primary" onClick={selectHere} disabled={busy}>Usar esta carpeta</button>
+        </div>
+      </div>
     </div>
   );
 }

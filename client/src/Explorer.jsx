@@ -1,9 +1,20 @@
 import { useMemo, useState } from "react";
 import { api } from "./api";
-import { badgeFor, formatSize, PREVIEWABLE, IMAGE_EXT, VIDEO_EXT, AUDIO_EXT, DownloadIcon } from "./DocumentCard";
+import { badgeFor, formatSize, formatDate, PREVIEWABLE, IMAGE_EXT, VIDEO_EXT, AUDIO_EXT } from "./DocumentCard";
 import DocumentModal from "./DocumentModal";
 import { toast } from "./toast";
-import { FolderIcon, GridIcon, ListIcon } from "./icons";
+import {
+  FolderIcon, GridIcon, ListIcon, SearchIcon, HomeIcon, ChevronRightIcon, ChevronDownIcon,
+  EyeIcon, RefreshIcon, UploadIcon, InfoIcon, DownloadIcon,
+} from "./icons";
+
+const TYPES = [
+  { id: "all", label: "Todos" },
+  { id: "pdf", label: "PDF", test: (ext) => ext === ".pdf" },
+  { id: "doc", label: "Word", test: (ext) => ext === ".doc" || ext === ".docx" },
+  { id: "xls", label: "Excel", test: (ext) => [".xls", ".xlsx", ".csv"].includes(ext) },
+  { id: "other", label: "Otros", test: (ext) => !(ext === ".pdf" || ext === ".doc" || ext === ".docx" || [".xls", ".xlsx", ".csv"].includes(ext)) },
+];
 
 function buildTree(documents) {
   const root = { folders: new Map(), files: [] };
@@ -18,149 +29,212 @@ function buildTree(documents) {
   }
   return root;
 }
-
 function countAll(node) {
   return node.files.length + [...node.folders.values()].reduce((s, n) => s + countAll(n), 0);
 }
-
 function download(doc) { toast(`Descargando ${doc.filename}`); }
+const canOpen = (doc) => PREVIEWABLE.has(doc.ext) || VIDEO_EXT.has(doc.ext) || AUDIO_EXT.has(doc.ext);
 
-function FileRow({ doc, onOpen }) {
-  const canOpen = PREVIEWABLE.has(doc.ext) || VIDEO_EXT.has(doc.ext) || AUDIO_EXT.has(doc.ext);
+function FileRow({ doc, depth, onOpen }) {
+  const { label, cls } = badgeFor(doc.ext);
   return (
-    <div className="file-row" onClick={canOpen ? () => onOpen(doc) : undefined} style={{ cursor: canOpen ? "pointer" : "default" }}>
-      {IMAGE_EXT.has(doc.ext)
-        ? <img className="doc-tile-thumb" style={{ width: 36, height: 36 }} src={api.viewUrl(doc._id)} alt="" loading="lazy" />
-        : <span className="file-badge" style={{ background: badgeFor(doc.ext).color }}>{badgeFor(doc.ext).label}</span>}
-      <span className="file-row-name" title={doc.filename}>{doc.filename}</span>
-      <span className="file-row-meta">{formatSize(doc.size)}</span>
-      <a className="icon-btn" href={api.downloadUrl(doc._id)} title="Descargar" aria-label="Descargar"
-        onClick={(e) => { e.stopPropagation(); download(doc); }}><DownloadIcon /></a>
-    </div>
+    <tr className="file">
+      <td style={{ paddingLeft: 24 + depth * 24, cursor: canOpen(doc) ? "pointer" : "default" }} onClick={canOpen(doc) ? () => onOpen(doc) : undefined}>
+        <span className="tree-name">
+          <span className={`ftype sm ${cls}`}>{label}</span>
+          <span className="nm" title={doc.filename}>{doc.filename}</span>
+        </span>
+      </td>
+      <td className="muted hide-sm">{label}</td>
+      <td className="num">{formatSize(doc.size)}</td>
+      <td className="num hide-sm">{formatDate(doc.mtimeMs)}</td>
+      <td>
+        <div className="row-acts">
+          {canOpen(doc) && <button type="button" className="btn-icon sm" title="Vista previa" onClick={() => onOpen(doc)}><EyeIcon size={15} /></button>}
+          <a className="btn-icon sm" title="Descargar" href={api.downloadUrl(doc._id)} onClick={() => download(doc)}><DownloadIcon size={15} /></a>
+        </div>
+      </td>
+    </tr>
   );
 }
 
-function FolderNode({ name, node, forceOpen, onOpen }) {
+function FolderRows({ name, node, depth, openFolders, toggle, onOpen }) {
+  const path = name;
+  const open = openFolders.has(path);
+  const childFolders = [...node.folders.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   return (
-    <details className="doc-folder" open={forceOpen || undefined}>
-      <summary><FolderIcon size={15} /> {name} <small>({countAll(node)})</small></summary>
-      <div className="doc-folder-body">
-        {[...node.folders.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([childName, child]) => (
-          <FolderNode key={childName} name={childName} node={child} forceOpen={forceOpen} onOpen={onOpen} />
-        ))}
-        {node.files.map((doc) => <FileRow key={doc._id} doc={doc} onOpen={onOpen} />)}
-      </div>
-    </details>
+    <>
+      <tr>
+        <td colSpan={4} style={{ paddingLeft: depth * 24 }}>
+          <button type="button" className="tree-toggle" aria-expanded={open} onClick={() => toggle(path)}>
+            <ChevronDownIcon size={14} className="chev" />
+            <span className="fold-ic"><FolderIcon size={15} filled /></span>
+            {name.split("/").pop()}
+            <span className="badge">{countAll(node)}</span>
+          </button>
+        </td>
+        <td></td>
+      </tr>
+      {open && childFolders.map(([childName, child]) => (
+        <FolderRows key={childName} name={`${path}/${childName}`} node={child} depth={depth + 1} openFolders={openFolders} toggle={toggle} onOpen={onOpen} />
+      ))}
+      {open && node.files.map((doc) => <FileRow key={doc._id} doc={doc} depth={depth + 1} onOpen={onOpen} />)}
+    </>
   );
+}
+
+function ListView({ tree, forceOpen, onOpen }) {
+  const [openFolders, setOpenFolders] = useState(new Set());
+  const effectiveOpen = forceOpen ? new Set([...openFolders, ...allPaths(tree)]) : openFolders;
+  function toggle(path) {
+    setOpenFolders((s) => { const n = new Set(s); n.has(path) ? n.delete(path) : n.add(path); return n; });
+  }
+  const topFolders = [...tree.folders.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+  return (
+    <div className="card" style={{ overflow: "hidden" }}>
+      <table className="table">
+        <thead><tr><th>Nombre</th><th className="hide-sm">Tipo</th><th className="num">Tamaño</th><th className="num hide-sm">Modificado</th><th style={{ width: 90 }}></th></tr></thead>
+        <tbody>
+          {topFolders.map(([name, node]) => (
+            <FolderRows key={name} name={name} node={node} depth={0} openFolders={effectiveOpen} toggle={toggle} onOpen={onOpen} />
+          ))}
+          {tree.files.map((doc) => <FileRow key={doc._id} doc={doc} depth={0} onOpen={onOpen} />)}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+function allPaths(node, prefix = "") {
+  let out = [];
+  for (const [name, child] of node.folders) {
+    const path = prefix ? `${prefix}/${name}` : name;
+    out.push(path, ...allPaths(child, path));
+  }
+  return out;
 }
 
 function FileTile({ doc }) {
   const [open, setOpen] = useState(false);
-  const canOpen = PREVIEWABLE.has(doc.ext) || VIDEO_EXT.has(doc.ext) || AUDIO_EXT.has(doc.ext);
+  const { label, cls } = badgeFor(doc.ext);
   function activate() {
-    if (canOpen) setOpen(true);
+    if (canOpen(doc)) setOpen(true);
     else window.open(api.downloadUrl(doc._id), "_blank");
   }
   return (
     <>
-      <button type="button" className="doc-tile" title={doc.filename} onClick={activate}>
-        {IMAGE_EXT.has(doc.ext)
-          ? <img className="doc-tile-thumb" src={api.viewUrl(doc._id)} alt="" loading="lazy" />
-          : <span className="doc-tile-icon"><span className="file-badge" style={{ background: badgeFor(doc.ext).color }}>{badgeFor(doc.ext).label}</span></span>}
-        <span className="doc-tile-name">{doc.filename}</span>
-        <span className="doc-tile-meta">{formatSize(doc.size)}</span>
+      <button type="button" className="tile" title={doc.filename} onClick={activate}>
+        <span className="pv">
+          {IMAGE_EXT.has(doc.ext)
+            ? <img src={api.viewUrl(doc._id)} alt="" loading="lazy" />
+            : <span className="sheet" style={{ "--c": `var(--${cls === "other" ? "text-3" : cls})` }} />}
+          <span className={`ftype sm ${cls}`}>{label}</span>
+        </span>
+        <span className="tx"><b title={doc.filename}>{doc.filename}</b><small>{formatSize(doc.size)}</small></span>
       </button>
       {open && <DocumentModal doc={doc} onClose={() => setOpen(false)} />}
     </>
   );
 }
-
 function FolderTile({ name, node, onOpen }) {
   return (
-    <button type="button" className="doc-tile" onClick={onOpen} title={name}>
-      <span className="doc-tile-icon"><FolderIcon size={30} /></span>
-      <span className="doc-tile-name">{name}</span>
-      <span className="doc-tile-meta">{countAll(node)} elemento(s)</span>
+    <button type="button" className="tile" onClick={onOpen} title={name}>
+      <span className="pv"><span className="fold-big"><FolderIcon size={34} filled /></span></span>
+      <span className="tx"><b>{name}</b><small>{countAll(node)} elemento(s)</small></span>
     </button>
   );
 }
-
-function GridView({ tree, documents }) {
+function GridView({ tree }) {
   const [path, setPath] = useState([]);
-
   const node = useMemo(() => {
     let n = tree;
-    for (const part of path) {
-      n = n.folders.get(part);
-      if (!n) return tree;
-    }
+    for (const part of path) { n = n.folders.get(part); if (!n) return tree; }
     return n;
   }, [tree, path]);
-
-  const folders = [...node.folders.entries()];
+  const folders = [...node.folders.entries()].sort((a, b) => a[0].localeCompare(b[0]));
   const files = node.files;
-
   return (
     <div>
       {path.length > 0 && (
-        <div className="breadcrumbs">
-          <button type="button" className="link" onClick={() => setPath([])}>raíz</button>
+        <div className="crumbs">
+          <button type="button" className="link" onClick={() => setPath([])}><HomeIcon size={12} /></button>
           {path.map((p, i) => (
-            <span key={i}> / <button type="button" className="link" onClick={() => setPath(path.slice(0, i + 1))}>{p}</button></span>
+            <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <ChevronRightIcon size={12} />
+              <button type="button" className="link" onClick={() => setPath(path.slice(0, i + 1))}>{p}</button>
+            </span>
           ))}
         </div>
       )}
-      {documents.length === 0 && <p className="hint">Todavía no hay documentos indexados.</p>}
-      {documents.length > 0 && folders.length === 0 && files.length === 0 && <p className="hint">Esta carpeta está vacía.</p>}
-      <div className="doc-grid">
-        {folders.map(([name, child]) => (
-          <FolderTile key={name} name={name} node={child} onOpen={() => setPath([...path, name])} />
-        ))}
+      {folders.length === 0 && files.length === 0 && (
+        <div className="card"><div className="empty"><div className="ic"><SearchIcon size={20} /></div><b>Sin resultados</b>Esta carpeta está vacía.</div></div>
+      )}
+      <div className="grid">
+        {folders.map(([name, child]) => <FolderTile key={name} name={name} node={child} onOpen={() => setPath([...path, name])} />)}
         {files.map((doc) => <FileTile key={doc._id} doc={doc} />)}
       </div>
     </div>
   );
 }
 
-export default function Explorer({ documents }) {
+export default function Explorer({ documents, user, onOpenLibrary }) {
   const [filter, setFilter] = useState("");
+  const [type, setType] = useState("all");
   const [view, setView] = useState("list");
-  const [preview, setPreview] = useState(null);
 
   const filtered = useMemo(() => {
     const f = filter.trim().toLowerCase();
-    if (!f) return documents;
-    return documents.filter((d) => d.filename.toLowerCase().includes(f) || d.folder.toLowerCase().includes(f));
-  }, [documents, filter]);
+    const typeTest = TYPES.find((t) => t.id === type)?.test;
+    return documents.filter((d) =>
+      (!f || d.filename.toLowerCase().includes(f) || (d.folder || "").toLowerCase().includes(f)) &&
+      (!typeTest || typeTest(d.ext)));
+  }, [documents, filter, type]);
 
   const tree = useMemo(() => buildTree(filtered), [filtered]);
-  const forceOpen = filter.trim().length > 0;
+  const forceOpen = filter.trim().length > 0 || type !== "all";
+  const topFolders = useMemo(() => new Set(documents.map((d) => (d.folder || "").split("/")[0]).filter(Boolean)), [documents]);
+  const [preview, setPreview] = useState(null);
 
   return (
-    <div className="panel">
-      <div className="explorer-head">
-        <h1>Documentos</h1>
-        <div className="view-toggle">
-          <button type="button" className={view === "list" ? "on" : ""} onClick={() => setView("list")}><ListIcon size={14} /> Lista</button>
-          <button type="button" className={view === "grid" ? "on" : ""} onClick={() => setView("grid")}><GridIcon size={14} /> Tarjetas</button>
+    <div className="page"><div className="page-inner">
+      <div className="crumbs"><HomeIcon size={12} />Biblioteca<ChevronRightIcon size={12} />Documentos</div>
+      <div className="page-head">
+        <div>
+          <h1>Documentos</h1>
+          <p>{documents.length} documentos en {topFolders.size} carpeta{topFolders.size === 1 ? "" : "s"}</p>
+        </div>
+        {user?.role === "admin" && onOpenLibrary && (
+          <div className="actions">
+            <button type="button" className="btn btn-secondary" onClick={onOpenLibrary}><RefreshIcon size={14} />Reindexar</button>
+            <button type="button" className="btn btn-primary" onClick={onOpenLibrary}><UploadIcon size={14} />Subir archivos</button>
+          </div>
+        )}
+      </div>
+      <div className="toolbar">
+        <div className="input-icon"><SearchIcon /><input className="input" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filtrar por nombre o carpeta…" aria-label="Filtrar documentos" /></div>
+        <div className="seg" aria-label="Tipo de archivo">
+          {TYPES.map((t) => <button type="button" key={t.id} className={type === t.id ? "on" : ""} onClick={() => setType(t.id)}>{t.label}</button>)}
+        </div>
+        <span className="grow" />
+        <div className="seg" aria-label="Vista">
+          <button type="button" className={view === "list" ? "on" : ""} onClick={() => setView("list")}><ListIcon size={14} />Lista</button>
+          <button type="button" className={view === "grid" ? "on" : ""} onClick={() => setView("grid")}><GridIcon size={14} />Tarjetas</button>
         </div>
       </div>
-      <input className="explorer-filter" value={filter} onChange={(e) => setFilter(e.target.value)}
-        placeholder="Filtrar por nombre o carpeta…" aria-label="Filtrar documentos" />
 
-      {view === "list" ? (
-        <>
-          {documents.length === 0 && <p className="hint">Todavía no hay documentos indexados.</p>}
-          {documents.length > 0 && filtered.length === 0 && <p className="hint">Nada coincide con «{filter}».</p>}
-          {[...tree.folders.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([name, node]) => (
-            <FolderNode key={name} name={name} node={node} forceOpen={forceOpen} onOpen={setPreview} />
-          ))}
-          {tree.files.map((doc) => <FileRow key={doc._id} doc={doc} onOpen={setPreview} />)}
-        </>
-      ) : (
-        <GridView tree={tree} documents={documents} />
+      {documents.length === 0 && (
+        <div className="card"><div className="empty"><div className="ic"><FolderIcon size={20} /></div><b>Sin documentos</b>Todavía no hay nada indexado en tu biblioteca.</div></div>
+      )}
+      {documents.length > 0 && filtered.length === 0 && (
+        <div className="card"><div className="empty"><div className="ic"><SearchIcon size={20} /></div><b>Sin resultados</b>Prueba con otro nombre o quita los filtros.</div></div>
+      )}
+      {filtered.length > 0 && (view === "list"
+        ? <ListView tree={tree} forceOpen={forceOpen} onOpen={setPreview} />
+        : <GridView tree={tree} />)}
+
+      {user?.role !== "admin" && (
+        <div className="callout"><InfoIcon size={16} /><span>Solo ves las carpetas que tu grupo tiene permitidas. Si necesitas acceso a otra, pídeselo a un administrador.</span></div>
       )}
       {preview && <DocumentModal doc={preview} onClose={() => setPreview(null)} />}
-    </div>
+    </div></div>
   );
 }

@@ -51,14 +51,16 @@ export default function App() {
 
   return (
     <div className="app">
-      <Sidebar user={user} view={view} onNavigate={navigate} onLogout={logout} onOpenLibrary={() => setLibraryOpen(true)} />
-      <main className="main-view">
-        {view === "chat" && <Chat key={chatKey} user={user} onOpenDocumentos={() => setView("documentos")} />}
-        {view === "documentos" && <Explorer documents={documents} />}
-        {view === "usuarios" && user.role === "admin" && <Users />}
-        {view === "grupos" && user.role === "admin" && <Groups />}
-        {view === "registro" && user.role === "admin" && <ActivityLog />}
-        {error && <p className="error toast" role="alert" onClick={() => setError("")}>{error}</p>}
+      <Sidebar user={user} view={view} documentCount={documents.length} onNavigate={navigate} onLogout={logout} onOpenLibrary={() => setLibraryOpen(true)} />
+      <main className="main">
+        <section className="view">
+          {view === "chat" && <Chat key={chatKey} user={user} documents={documents} onOpenDocumentos={() => setView("documentos")} />}
+          {view === "documentos" && <Explorer documents={documents} user={user} onOpenLibrary={() => setLibraryOpen(true)} />}
+          {view === "usuarios" && user.role === "admin" && <Users currentUser={user} />}
+          {view === "grupos" && user.role === "admin" && <Groups />}
+          {view === "registro" && user.role === "admin" && <ActivityLog />}
+          {error && <p className="error" role="alert" onClick={() => setError("")}>{error}</p>}
+        </section>
       </main>
 
       {libraryOpen && <LibraryPicker onClose={closeLibrary} />}
