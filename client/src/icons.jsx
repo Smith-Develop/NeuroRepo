@@ -85,6 +85,9 @@ export function UpArrowIcon(props) {
 export function LogoutIcon(props) {
   return <Icon {...props}><path d="M15 4h3a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2h-3M10 16l-4-4 4-4M6 12h10" /></Icon>;
 }
+export function KeyIcon(props) {
+  return <Icon {...props}><circle cx="8" cy="15" r="4" /><path d="M11 12l9-9M17 6l3 3M15 8l2 2" /></Icon>;
+}
 export function CalendarIcon(props) {
   return <Icon {...props}><rect x="4" y="5" width="16" height="15" rx="2" /><path d="M8 3v4M16 3v4M4 10h16" /></Icon>;
 }

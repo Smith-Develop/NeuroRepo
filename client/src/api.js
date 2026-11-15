@@ -24,6 +24,7 @@ export const api = {
   login: (dni, password) => req("/login", { method: "POST", body: password ? { dni, password } : { dni } }),
   logout: () => req("/logout", { method: "POST" }),
   me: () => req("/me"),
+  changePassword: (current, next) => req("/me/password", { method: "POST", body: { current, next } }),
 
   createUser: (body) => req("/users", { method: "POST", body }),
   users: () => req("/users"),

@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { api } from "./api";
 import Docu from "./Docu";
-import { ChatIcon, FolderIcon, UsersIcon, ShieldIcon, ActivityIcon, LinkIcon, PlusIcon, LogoutIcon } from "./icons";
+import { toast } from "./toast";
+import { ChatIcon, FolderIcon, UsersIcon, ShieldIcon, ActivityIcon, LinkIcon, PlusIcon, LogoutIcon, KeyIcon, XIcon } from "./icons";
 
 const ITEMS = [
   { id: "chat", label: "Asistente", Icon: ChatIcon },
@@ -25,6 +27,7 @@ function syncLabel(date) {
 export default function Sidebar({ user, view, documentCount, onNavigate, onLogout, onOpenLibrary }) {
   const [userCount, setUserCount] = useState(null);
   const [library, setLibrary] = useState(null);
+  const [pwOpen, setPwOpen] = useState(false);
   const isAdmin = user.role === "admin";
   const initials = (user.name || "?").trim().slice(0, 2).toUpperCase();
 
@@ -86,8 +89,57 @@ export default function Sidebar({ user, view, documentCount, onNavigate, onLogou
       <div className="user-row">
         <span className="avatar sm">{initials}</span>
         <span className="who"><b>{user.name}</b><small>{isAdmin ? "Administrador" : "Usuario"}</small></span>
+        {isAdmin && <button type="button" className="btn-icon sm" title="Cambiar contraseña" onClick={() => setPwOpen(true)}><KeyIcon /></button>}
         <button type="button" className="btn-icon sm" title="Cerrar sesión" onClick={onLogout}><LogoutIcon /></button>
       </div>
+      {pwOpen && createPortal(<PasswordDialog onClose={() => setPwOpen(false)} />, document.body)}
     </aside>
+  );
+}
+
+function PasswordDialog({ onClose }) {
+  const [current, setCurrent] = useState("");
+  const [next, setNext] = useState("");
+  const [again, setAgain] = useState("");
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const mismatch = again && next !== again;
+
+  async function submit(e) {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await api.changePassword(current, next);
+      toast("Contraseña cambiada");
+      onClose();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <div className="overlay" role="dialog" aria-modal="true" aria-labelledby="pwT" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <form className="dialog" onSubmit={submit}>
+        <div className="dlg-head">
+          <div className="tt"><h3 id="pwT">Cambiar contraseña</h3><p>Se cerrarán tus otras sesiones abiertas.</p></div>
+          <button type="button" className="btn-icon" onClick={onClose} aria-label="Cerrar"><XIcon /></button>
+        </div>
+        <div className="dlg-body">
+          <div className="field"><label htmlFor="pwCur">Contraseña actual</label><input className="input" id="pwCur" type="password" required autoFocus value={current} onChange={(e) => setCurrent(e.target.value)} /></div>
+          <div className="field"><label htmlFor="pwNew">Nueva contraseña</label><input className="input" id="pwNew" type="password" required minLength={4} value={next} onChange={(e) => setNext(e.target.value)} /></div>
+          <div className="field"><label htmlFor="pwAgain">Repite la nueva</label><input className="input" id="pwAgain" type="password" required value={again} onChange={(e) => setAgain(e.target.value)} /></div>
+          {mismatch && <p className="error">Las contraseñas no coinciden.</p>}
+          {error && <p className="error" role="alert">{error}</p>}
+        </div>
+        <div className="dlg-foot">
+          <span className="grow" />
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancelar</button>
+          <button type="submit" className="btn btn-primary" disabled={busy || !current || next.length < 4 || next !== again}>Guardar</button>
+        </div>
+      </form>
+    </div>
   );
 }

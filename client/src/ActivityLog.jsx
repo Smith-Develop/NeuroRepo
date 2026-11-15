@@ -17,6 +17,8 @@ const META = {
   "user.update": { label: "editó el usuario", k: "admin", Icon: EditIcon, cls: "acc" },
   "user.delete": { label: "borró el usuario", k: "admin", Icon: TrashIcon, cls: "warn" },
   "user.import": { label: "importó usuarios", k: "admin", Icon: UsersIcon, cls: "acc" },
+  "user.password-change": { label: "cambió su contraseña", k: "admin", Icon: LockIcon, cls: "acc" },
+  "user.password-reset": { label: "restableció la contraseña de", k: "admin", Icon: LockIcon, cls: "warn" },
   "group.create": { label: "creó el grupo", k: "admin", Icon: ShieldIcon, cls: "acc" },
   "group.update": { label: "editó el grupo", k: "admin", Icon: EditIcon, cls: "acc" },
   "group.delete": { label: "borró el grupo", k: "admin", Icon: TrashIcon, cls: "warn" },

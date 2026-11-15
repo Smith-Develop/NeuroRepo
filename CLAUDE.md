@@ -84,7 +84,11 @@ Nada depende de APIs de pago.
 - `server/src/authRoutes.js` – `POST /login {dni, password?}`: los usuarios normales entran solo con DNI;
   si el DNI es del admin y no se manda contraseña, responde `401 {needsPassword:true}` para que el cliente
   pida el segundo campo. `/users`, `/users/import` (texto `Nombre,DNI` por línea, upsert por DNI),
-  `/groups` (CRUD con `folders: [String]`).
+  `/groups` (CRUD con `folders: [String]`). `POST /me/password {current, next}` (admin): cambia su propia
+  contraseña y cierra sus otras sesiones (botón de llave junto a «Cerrar sesión» en `Sidebar.jsx`).
+- `server/src/resetAdmin.js` – recuperación de contraseña sin email: `docker compose exec app node
+  src/resetAdmin.js <DNI>` (sin DNI lista los admins). Pide la nueva contraseña sin eco, cierra sus
+  sesiones y lo deja en el Registro. En Windows, `Restablecer-admin.bat` (raíz del repo) lanza lo mismo.
 - `client/src/Chat.jsx` – un único modo (buscar). Sin mensajes todavía muestra una pantalla de bienvenida
   (`chat-landing`: Docu grande, saludo con el nombre del usuario, input centrado y sugerencias); en cuanto
   se manda el primer mensaje pasa al transcript normal, con burbujas estilo Telegram (usuario a la derecha,
@@ -142,8 +146,8 @@ Nada depende de APIs de pago.
   dentro del contenedor con «Cannot access file» aunque Node sí puede leer el archivo.
 - En `NODE_ENV=production` la app no arranca sin `BOOTSTRAP_ADMIN_DNI`/`BOOTSTRAP_ADMIN_PASSWORD` (hace
   falta para crear el primer admin). Ollama nunca publica su puerto.
-- Solo existe el rol admin y user; el admin no puede crear más admins desde la UI. Para un segundo admin,
-  crearlo a mano en Mongo o por env var en otro arranque sin admins.
+- Solo existen los roles admin y user. Puede haber varios admins (se crean o se ascienden desde Usuarios,
+  cada uno con su contraseña); el servidor impide quitar o borrar al último admin.
 
 ## Ejecutar
 - Docker local: crea `DOCS_HOST_PATH` (carpeta del host con documentos de prueba) y
@@ -154,8 +158,8 @@ Nada depende de APIs de pago.
   (Vite hace proxy de `/api` a :4000).
 - Comprobaciones rápidas: `node --check server/src/*.js`, `cd client && npm run build`. No hay tests
   automatizados todavía.
-- Pendientes conocidos: sin vista previa en línea de Word/Excel (solo descarga); sin recuperación de
-  contraseña del admin; `GET /documents` sin paginar si la biblioteca pasa de ~5000 archivos.
+- Pendientes conocidos: sin vista previa en línea de Word/Excel (solo descarga); `GET /documents` sin
+  paginar si la biblioteca pasa de ~5000 archivos.
 
 ## Instalador para Windows (`instalar.ps1` / `Instalar.bat`)
 Pensado para pasárselo a alguien sin conocimientos técnicos (p. ej. para usarlo en la red interna de

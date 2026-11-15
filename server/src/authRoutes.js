@@ -1,7 +1,7 @@
 import { Router } from "express";
 import mongoose from "mongoose";
 import { User, Session, Group, ActivityLog } from "./models.js";
-import { hashPassword, verifyPassword, createSession, setSessionCookie, clearSessionCookie, requireAdmin } from "./auth.js";
+import { hashPassword, verifyPassword, createSession, setSessionCookie, clearSessionCookie, requireAdmin, sessionToken } from "./auth.js";
 import { logActivity } from "./activityLog.js";
 
 const r = Router();
@@ -36,6 +36,20 @@ r.post("/logout", wrap(async (req, res) => {
 
 r.get("/me", wrap(async (req, res) => {
   res.json({ user: req.user ? publicUser(req.user) : null });
+}));
+
+// El admin cambia su propia contraseña; cierra el resto de sus sesiones abiertas.
+r.post("/me/password", requireAdmin, wrap(async (req, res) => {
+  const current = text(req.body?.current, 200);
+  const next = text(req.body?.next, 200);
+  if (next.length < 4) return res.status(400).json({ error: "La nueva contraseña necesita al menos 4 caracteres." });
+  const user = await User.findById(req.user._id);
+  if (!verifyPassword(current, user.passwordHash)) return res.status(400).json({ error: "La contraseña actual no es correcta." });
+  user.passwordHash = hashPassword(next);
+  await user.save();
+  await Session.deleteMany({ user: user._id, _id: { $ne: sessionToken(req) } });
+  await logActivity(req, "user.password-change", `${user.name} (${user.dni})`);
+  res.status(204).end();
 }));
 
 // Gestión de usuarios: solo el admin. Puede haber varios admins (cada uno con su propia contraseña).
