@@ -125,3 +125,6 @@ export function DbIcon(props) {
 export function DownloadIcon(props) {
   return <Icon {...props}><path d="M12 4v11M7 10l5 5 5-5M5 20h14" /></Icon>;
 }
+export function StarIcon({ filled, ...props }) {
+  return <Icon {...props}><path d="m12 3.5 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z" fill={filled ? "currentColor" : "none"} /></Icon>;
+}

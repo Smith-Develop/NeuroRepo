@@ -4,10 +4,10 @@ import multer from "multer";
 import mammoth from "mammoth";
 import * as XLSX from "xlsx";
 import { readFileSync } from "node:fs";
-import { Document, FolderConfig, FileVersion, TrashItem, Group } from "./models.js";
+import { Document, FolderConfig, FileVersion, TrashItem, Group, User } from "./models.js";
 import { requireAdmin, canSeeFolder, folderFilter, folderAncestors } from "./auth.js";
-import { searchDocuments, topScore } from "./search.js";
-import { suggestKeywords, MODEL } from "./ai.js";
+import { searchDocuments, topScore, bestPassages } from "./search.js";
+import { suggestKeywords, answerFromDocuments, MODEL } from "./ai.js";
 import {
   safeResolve, browseFolder, getActiveLibraryPath, setActiveLibraryPath, getAppConfig, LibraryPathError, LIBRARY_ROOT,
   createFolder, renameFolder, saveUploadedFile, restoreVersion, restoreFromTrash, toRootRel,
@@ -84,9 +84,14 @@ r.get("/documents/children", wrap(async (req, res) => {
   res.json({ folder, folders, files: files.slice(0, CHILDREN_FILES_LIMIT), truncated: files.length > CHILDREN_FILES_LIMIT });
 }));
 
-// Chat: busca por coincidencia de texto; solo si no hay nada razonable, pide a la IA mejores palabras clave
+// Chat: busca por coincidencia de texto; solo si no hay nada razonable, pide a la IA mejores palabras clave.
+// Modo avanzado (mode: "advanced"): además, la IA responde a la pregunta con fragmentos de los
+// documentos encontrados que el usuario puede ver, citándolos ([1] = results[0]...).
+const ANSWER_SOURCES = 4;
 r.post("/ask", wrap(async (req, res) => {
   const question = text(req.body?.question, 500);
+  const advanced = req.body?.mode === "advanced";
+  const scope = text(req.body?.scope, 500); // carpeta de primer nivel elegida en el chat ("" = todas)
   if (!question) return res.status(400).json({ error: "Escribe qué documento buscas." });
 
   let found = await searchDocuments(question);
@@ -110,8 +115,48 @@ r.post("/ask", wrap(async (req, res) => {
     }
   }
 
-  found = found.filter((d) => canSeeFolder(req.user, d.folder));
-  res.json({ results: found.slice(0, 10), usedAI });
+  found = found.filter((d) => canSeeFolder(req.user, d.folder) && (!scope || d.topFolder === scope));
+  const results = found.slice(0, 10);
+  if (!advanced || !results.length) return res.json({ results, usedAI });
+
+  const sourcesDocs = results.slice(0, ANSWER_SOURCES);
+  const texts = await Document.find({ _id: { $in: sourcesDocs.map((d) => d._id) } }, "extractedText").lean();
+  const textById = new Map(texts.map((t) => [String(t._id), t.extractedText]));
+  const sources = sourcesDocs.map((d) => ({ filename: d.filename, folder: d.folder, text: bestPassages(question, textById.get(String(d._id))) }));
+  try {
+    const answer = await answerFromDocuments(question, sources);
+    res.json({ results, usedAI, answer, sourceCount: sources.length });
+  } catch (e) {
+    // Sin IA disponible: se devuelven igualmente los documentos, con el motivo
+    res.json({ results, usedAI, aiError: e.message || "La IA no está disponible." });
+  }
+}));
+
+// Favoritos del usuario: documentos marcados desde el chat para no tener que volver a buscarlos.
+const FAVORITES_MAX = 300;
+r.get("/favorites", wrap(async (req, res) => {
+  const user = await User.findById(req.user._id, "favorites").lean();
+  const docs = await Document.find({ _id: { $in: user?.favorites || [] } }, LIST_FIELDS).lean();
+  const order = new Map((user?.favorites || []).map((id, i) => [String(id), i]));
+  res.json(docs.filter((d) => canSeeFolder(req.user, d.folder)).sort((a, b) => order.get(String(b._id)) - order.get(String(a._id))));
+}));
+
+r.put("/favorites/:id", wrap(async (req, res) => {
+  const doc = await findAccessibleDoc(req, res);
+  if (!doc) return;
+  const user = await User.findById(req.user._id, "favorites");
+  if (!user.favorites.some((id) => String(id) === String(doc._id))) {
+    if (user.favorites.length >= FAVORITES_MAX) return res.status(400).json({ error: `Como mucho ${FAVORITES_MAX} favoritos.` });
+    user.favorites.push(doc._id);
+    await user.save();
+  }
+  res.status(204).end();
+}));
+
+r.delete("/favorites/:id", wrap(async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).end();
+  await User.updateOne({ _id: req.user._id }, { $pull: { favorites: new mongoose.Types.ObjectId(req.params.id) } });
+  res.status(204).end();
 }));
 
 // El usuario pide acceso a una carpeta bloqueada: solo deja constancia en el registro para que

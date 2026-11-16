@@ -54,6 +54,8 @@ const userSchema = new mongoose.Schema(
     passwordHash: { type: String, default: null }, // solo lo tiene el admin; los usuarios normales entran solo con el DNI
     role: { type: String, enum: ["admin", "user"], default: "user" },
     group: { type: mongoose.Schema.Types.ObjectId, ref: "Group", default: null },
+    // Documentos marcados como favoritos desde el chat (se filtran por permisos al listarlos)
+    favorites: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: "Document" }], default: [] },
   },
   { timestamps: true },
 );

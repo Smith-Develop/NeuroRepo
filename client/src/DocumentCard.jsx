@@ -1,8 +1,9 @@
-import { useState } from "react";
+import { useContext, useState } from "react";
 import { api } from "./api";
 import DocumentModal from "./DocumentModal";
 import { toast } from "./toast";
-import { EyeIcon, FolderIcon, ChevronRightIcon, DownloadIcon } from "./icons";
+import { AppContext } from "./appContext";
+import { EyeIcon, FolderIcon, ChevronRightIcon, DownloadIcon, StarIcon } from "./icons";
 
 const LABELS = {
   ".pdf": "PDF", ".doc": "DOC", ".docx": "DOC", ".xls": "XLS", ".xlsx": "XLS", ".csv": "CSV",
@@ -35,8 +36,11 @@ export function formatDate(ms) {
 // Fila de resultado (chat): insignia de tipo + nombre/ruta/fragmento y, al lado, relevancia
 // (si la trae la búsqueda) y las acciones de abrir/descargar. Vídeo y audio se reproducen aquí
 // mismo, en la propia fila, tal como pidió el cliente ("que se puedan reproducir desde el chat").
-export default function DocumentCard({ doc, score, maxScore }) {
+// `cite`: número con el que la respuesta del modo avanzado cita este documento ([1], [2]...).
+export default function DocumentCard({ doc, score, maxScore, cite }) {
   const [open, setOpen] = useState(false);
+  const { favoriteIds, toggleFavorite } = useContext(AppContext);
+  const isFavorite = favoriteIds?.has(doc._id);
   const canPreview = PREVIEWABLE.has(doc.ext);
   const isVideo = VIDEO_EXT.has(doc.ext);
   const isAudio = AUDIO_EXT.has(doc.ext);
@@ -50,7 +54,7 @@ export default function DocumentCard({ doc, score, maxScore }) {
     <div className="res">
       <span className={`ftype ${cls}`}>{label}</span>
       <div className="info">
-        <div className="t" title={doc.filename}>{doc.filename}</div>
+        <div className="t" title={doc.filename}>{cite && <span className="cite">{cite}</span>}{doc.filename}</div>
         <div className="path">
           <FolderIcon size={11} />
           {pathParts.map((p, i) => (
@@ -69,6 +73,12 @@ export default function DocumentCard({ doc, score, maxScore }) {
           <div className="score" title="Relevancia"><span className="bar"><i style={{ width: `${pct}%` }} /></span>{pct}%</div>
         )}
         <div className="acts">
+          {toggleFavorite && (
+            <button type="button" className={`btn-icon sm fav${isFavorite ? " on" : ""}`} onClick={() => toggleFavorite(doc)}
+              title={isFavorite ? "Quitar de favoritos" : "Añadir a favoritos"} aria-label={isFavorite ? "Quitar de favoritos" : "Añadir a favoritos"} aria-pressed={isFavorite}>
+              <StarIcon size={15} filled={isFavorite} />
+            </button>
+          )}
           <a className="btn-icon sm" href={api.downloadUrl(doc._id)} title="Descargar" aria-label="Descargar" onClick={download}><DownloadIcon size={15} /></a>
           {canPreview && <button type="button" className="btn btn-primary btn-sm" onClick={() => setOpen(true)}><EyeIcon size={14} />Abrir</button>}
         </div>

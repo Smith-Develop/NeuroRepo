@@ -1,9 +1,11 @@
 # Biblioteca de documentos (NeuroRepo)
 
 App MERN tipo gestor documental (parecido a Alfresco Community, con IA) para una carpeta de documentos
-del trabajo. Interfaz tipo ChatGPT (barra lateral + chat centrado): en el chat se **busca** documentación
-(por coincidencia de texto, no redactando respuestas) y se muestran los documentos encontrados con opción
-de **verlos** (PDF/imágenes, en línea) o **descargarlos**. También hay un **explorador de carpetas**
+del trabajo. Interfaz tipo ChatGPT (barra lateral + chat centrado) con dos modos: **simple** (busca documentación por
+coincidencia de texto y muestra los documentos encontrados) y **avanzada** (además, la IA lee fragmentos
+de esos documentos y responde a la pregunta citándolos). Cada resultado se puede **ver** (PDF/imágenes,
+en línea), **descargar** o marcar como **favorito** (vista «Favoritos»). El historial de conversaciones
+se guarda en el `localStorage` del navegador de cada usuario (sección «Historial» de la barra lateral). También hay un **explorador de carpetas**
 (`Documentos` en la barra lateral) para navegar todo lo indexado como un árbol de archivos.
 
 La documentación vive **fuera de la app**, en una carpeta del sistema de archivos del host, montada de
@@ -35,8 +37,8 @@ Nada depende de APIs de pago.
 - Extracción de texto: `pdf-parse` (PDF), `mammoth` (`.docx`), `xlsx` (SheetJS — instalado desde
   `cdn.sheetjs.com`, no desde npm, porque la versión publicada en el registro de npm tiene vulnerabilidades
   sin parchear; la build de SheetJS sí las corrige). `.txt`/`.md`/`.csv` se leen directamente.
-- IA: Ollama vía REST (`fetch`, sin SDK), usada **solo como respaldo** de la búsqueda (ver más abajo).
-  Modelo por defecto `qwen2.5:1.5b` (`OLLAMA_MODEL`).
+- IA: Ollama vía REST (`fetch`, sin SDK): respaldo de la búsqueda simple y respuestas del modo avanzado
+  (ver más abajo). Modelo por defecto `qwen2.5:1.5b` (`OLLAMA_MODEL`).
 - MongoDB 7. Índice de texto en español sobre los documentos (`server/src/models.js`).
 
 ## Archivos clave
@@ -76,9 +78,13 @@ Nada depende de APIs de pago.
   **Importante**: la puntuación (`score: {$meta:"textScore"}`) va en la MISMA llamada a `.find()`/proyección
   que el resto de campos — encadenar un `.select()` aparte la pisa y `score` llega `undefined` (bug real que
   apareció al construirlo; dejarlo documentado para no repetirlo).
-- `server/src/ai.js` – `suggestKeywords(question)`: la IA solo convierte la pregunta en palabras clave
-  para reintentar la búsqueda; nunca redacta una respuesta sobre el contenido de los documentos (evita
-  alucinaciones y uso innecesario de IA).
+- `server/src/ai.js` – `chat()` común contra `/api/chat` (temperatura 0). `suggestKeywords(question)`:
+  convierte la pregunta en palabras clave para reintentar la búsqueda (modo simple).
+  `answerFromDocuments(question, sources)` (modo avanzado): responde SOLO con los fragmentos dados,
+  numerados `[n]`, citándolos, y dice «No lo encuentro en los documentos» si no está ahí
+  (`num_ctx` 8192, `num_predict` 600). Los fragmentos salen de `bestPassages` (`search.js`): trozos de
+  600 caracteres con más raíces de la pregunta, hasta 1500 por documento. Con el modelo de 1,5B las
+  respuestas son rápidas (~5 s en CPU) pero a veces imprecisas: la UI avisa de comprobarlas.
 - `server/src/routes.js` – API bajo `/api`:
   - `GET /documents?q=` (cualquier logueado) → búsqueda con `excerpt` por documento; `?name=&type=`
     (pdf/doc/xls/other) → filtro por nombre o carpeta (regex escapada) y tipo, como mucho 200
@@ -86,10 +92,16 @@ Nada depende de APIs de pago.
   - `GET /documents/summary` → `{total, topFolders}` visibles (contador de la barra lateral y ámbito del
     chat). `GET /documents/children?folder=` → un nivel del árbol: `{folders:[{name, path, count}],
     files, truncated}` (como mucho 2000 archivos por carpeta). Todo filtrado con `folderFilter`.
-  - `POST /ask {question}` (cualquier logueado) → busca por texto; si la mejor coincidencia es de una
-    carpeta sin permiso, devuelve el `blockedMessage` de esa carpeta **sin llamar a la IA**; si no hay nada
-    razonable (`score` por debajo de `AI_FALLBACK_SCORE`, por defecto 0.3), pide a la IA mejores palabras
-    clave y reintenta una vez.
+  - `POST /ask {question, mode, scope}` (cualquier logueado) → busca por texto; si la mejor coincidencia
+    es de una carpeta sin permiso, devuelve el `blockedMessage` de esa carpeta **sin llamar a la IA**; si
+    no hay nada razonable (`score` por debajo de `AI_FALLBACK_SCORE`, por defecto 0.3), pide a la IA
+    mejores palabras clave y reintenta una vez. `scope` (carpeta de primer nivel) se filtra en el
+    servidor. Con `mode: "advanced"`, los `ANSWER_SOURCES` (4) primeros resultados **ya filtrados por
+    permisos** van a `answerFromDocuments` → `{results, answer, sourceCount}` (`[1]` = `results[0]`); si
+    la IA falla, `{results, aiError}` (los documentos se muestran igual).
+  - `GET /favorites`, `PUT /favorites/:id`, `DELETE /favorites/:id` (cualquier logueado) → favoritos del
+    propio usuario (`User.favorites`, como mucho 300). Añadir comprueba permiso (`findAccessibleDoc`) y
+    el listado vuelve a filtrar con `canSeeFolder` (por si el grupo cambió); el más reciente, primero.
   - `GET /documents/:id/view` (inline: pdf, imagen, texto, vídeo, audio — vía `res.sendFile`, que ya
     soporta `Range` para que los reproductores de vídeo/audio puedan avanzar sin descargar todo) y
     `/download` (adjunto): resuelven `Document.path` contra la biblioteca activa con `safeResolve` y
@@ -118,7 +130,7 @@ Nada depende de APIs de pago.
   folders: [String]}` (rutas de carpeta de cualquier profundidad, relativas a la biblioteca activa; no
   referencias), `FolderConfig {folder,
   blockedMessage}`, `AppConfig` (documento único con la biblioteca activa y el estado del último escaneo),
-  `User {name, dni, passwordHash?, role, group}` (`passwordHash` solo lo tiene el admin), `Session`
+  `User {name, dni, passwordHash?, role, group, favorites: [Document]}` (`passwordHash` solo lo tiene el admin), `Session`
   (índice TTL, igual que antes).
 - `server/src/auth.js` – permisos por ruta: cada ruta del grupo incluye sus subcarpetas
   (`canSeeFolder`: igual a la ruta o empieza por `ruta + "/"`, así «Cal» no da acceso a «Calidad»);
@@ -134,7 +146,11 @@ Nada depende de APIs de pago.
 - `server/src/resetAdmin.js` – recuperación de contraseña sin email: `docker compose exec app node
   src/resetAdmin.js <DNI>` (sin DNI lista los admins). Pide la nueva contraseña sin eco, cierra sus
   sesiones y lo deja en el Registro. En Windows, `Restablecer-admin.bat` (raíz del repo) lanza lo mismo.
-- `client/src/Chat.jsx` – un único modo (buscar). Sin mensajes todavía muestra una pantalla de bienvenida
+- `client/src/Chat.jsx` – conmutador «Simple / Avanzada» (`.seg` en la barra del compositor; se
+  recuerda en `localStorage` `neurorepo.chatMode`). En avanzada pinta la respuesta (`AnswerText`, citas
+  `[n]` resaltadas) y numera las tarjetas citadas (`DocumentCard cite`). Cada conversación tiene un id
+  (`App.jsx` lo crea; `key` del componente) y se guarda en el historial en cada cambio; una búsqueda que
+  seguía en marcha al guardar se restaura como «interrumpida». Sin mensajes todavía muestra una pantalla de bienvenida
   (`chat-landing`: Docu grande, saludo con el nombre del usuario, input centrado y sugerencias); en cuanto
   se manda el primer mensaje pasa al transcript normal, con burbujas estilo Telegram (usuario a la derecha,
   Docu a la izquierda) y cada resultado como una `DocumentCard`. Mientras se busca, el mensaje `loading`
@@ -148,6 +164,13 @@ Nada depende de APIs de pago.
   archivo es clickable (abre `DocumentModal`) si es `PREVIEWABLE`; vídeo y audio se reproducen **en la
   propia tarjeta** (`<video>`/`<audio controls>`, sin modal) tal como pidió el cliente ("se puedan
   reproducir desde el chat").
+- `client/src/chatHistory.js` – historial en `localStorage` (`neurorepo.chat.<userId>`, como mucho 40
+  conversaciones `{id, title, scope, messages, updatedAt}`), con evento propio para que `Sidebar.jsx`
+  (sección «Historial», borrar con la ×) se actualice. Todo en try/catch: sin almacenamiento, el chat
+  funciona igual. No sale del navegador (en otro PC no aparece).
+- `client/src/Favorites.jsx` – vista «Favoritos»: los favoritos viven en `App.jsx` (cargados de
+  `/favorites`) y se comparten por `AppContext {favorites, favoriteIds, toggleFavorite}`; la estrella de
+  `DocumentCard` los cambia con actualización optimista.
 - `client/src/DocumentModal.jsx` – modal de vista previa (pdf en `<iframe>`; Word/Excel con el HTML de
   `/preview` en un `<iframe sandbox="" srcDoc>` con CSP `default-src 'none'` — el HTML sale del propio
   documento, así que nunca se pinta en la página de la app —, con pestañas por hoja; imagen en `<img>`, texto
@@ -198,9 +221,11 @@ Nada depende de APIs de pago.
   caliente desde «Vincular biblioteca», sin tocar Docker.
 - Subida de archivos con `multer` (`memoryStorage`, hasta 100 MB/archivo y 20 archivos por subida): es la
   única dependencia nueva para esto que Express 5 no cubre por sí solo (no hay parser multipart nativo).
-- Búsqueda primero por coincidencia de texto (barata, instantánea); la IA es siempre un respaldo, nunca el
-  camino por defecto, y solo reformula la pregunta en palabras clave — nunca redacta una respuesta sobre
-  el contenido (evita alucinaciones y uso innecesario de IA).
+- Búsqueda primero por coincidencia de texto (barata, instantánea). En el modo **simple** (el de por
+  defecto) la IA solo reformula la pregunta en palabras clave como respaldo. Que la IA **redacte
+  respuestas** solo pasa en el modo **avanzado**, que elige el usuario (antes estaba prohibido; se añadió
+  a petición del cliente): siempre a partir de fragmentos de documentos que el usuario puede ver, con
+  citas, y con el aviso de comprobarla en el original.
 - DNI sin contraseña para usuarios normales es una decisión consciente del cliente: un DNI no es secreto,
   así que quien lo conozca puede entrar como esa persona. El admin sí mantiene contraseña por gestionar
   usuarios/permisos/biblioteca.
@@ -274,7 +299,12 @@ falta).
   en `.env`; con eso añade `docker-compose.red.yml` (volumen CIFS `neurorepo-documentos-red` en el mismo
   destino `/app/library`, que sustituye al bind mount) y recrea el volumen en cada arranque. La
   contraseña de red queda en `.env`: si cambia, hay que reconfigurar.
-- `instalar.ps1` va en UTF-8 **con BOM**: Windows PowerShell 5.1 lee sin BOM como ANSI (tildes rotas,
+- **Modelo de IA sin internet**: el contenedor `model` es de un solo uso (descarga el modelo y se para;
+  verlo «Exited» es normal). Si la red bloquea la descarga, `Cargar-modelo.bat`/`cargar-modelo.ps1` copia
+  un `.gguf` de la carpeta del proyecto (Qwen2.5-1.5B-Instruct q4_k_m de Hugging Face) al contenedor
+  `ollama` y lo registra con `ollama create <OLLAMA_MODEL>` (Ollama detecta la plantilla de chat del
+  propio GGUF). Probado con `ollama/ollama` sin acceso al registro.
+- `instalar.ps1` y `cargar-modelo.ps1` van en UTF-8 **con BOM**: Windows PowerShell 5.1 lee sin BOM como ANSI (tildes rotas,
   y algunos bytes UTF-8 pasan por comillas tipográficas).
 - No sustituye a Docker Compose ni cambia nada de la arquitectura: es solo una capa de conveniencia
   sobre el mismo `docker-compose.yml`/`docker-compose.local.yml` que ya se usa en local y en Coolify.

@@ -4,12 +4,14 @@ import { api } from "./api";
 import Docu from "./Docu";
 import { toast } from "./toast";
 import { getTheme, setTheme } from "./theme";
-import { ChatIcon, FolderIcon, UsersIcon, ShieldIcon, ActivityIcon, LinkIcon, PlusIcon, LogoutIcon, KeyIcon, XIcon, SunIcon, InfoIcon } from "./icons";
+import { ChatIcon, FolderIcon, UsersIcon, ShieldIcon, ActivityIcon, LinkIcon, PlusIcon, LogoutIcon, KeyIcon, XIcon, SunIcon, InfoIcon, StarIcon } from "./icons";
+import { listConversations, onHistoryChange } from "./chatHistory";
 import AboutDialog from "./AboutDialog";
 
 const ITEMS = [
   { id: "chat", label: "Asistente", Icon: ChatIcon },
   { id: "documentos", label: "Documentos", Icon: FolderIcon },
+  { id: "favoritos", label: "Favoritos", Icon: StarIcon },
 ];
 const ADMIN_ITEMS = [
   { id: "usuarios", label: "Usuarios", Icon: UsersIcon },
@@ -26,7 +28,13 @@ function syncLabel(date) {
   return sameDay ? `hoy ${time}` : d.toLocaleDateString("es-ES", { day: "numeric", month: "short" }) + ` ${time}`;
 }
 
-export default function Sidebar({ user, view, documentCount, onNavigate, onLogout, onOpenLibrary }) {
+export default function Sidebar({ user, view, documentCount, favoriteCount, conversationId, onNewSearch, onOpenConversation, onDeleteConversation, onNavigate, onLogout, onOpenLibrary }) {
+  const [conversations, setConversations] = useState(() => listConversations(user._id));
+  useEffect(() => {
+    const refresh = () => setConversations(listConversations(user._id));
+    refresh();
+    return onHistoryChange(refresh);
+  }, [user._id]);
   const [userCount, setUserCount] = useState(null);
   const [library, setLibrary] = useState(null);
   const [pwOpen, setPwOpen] = useState(false);
@@ -47,7 +55,7 @@ export default function Sidebar({ user, view, documentCount, onNavigate, onLogou
         <Docu size={32} />
         <span className="name">NeuroRepo<small>Biblioteca documental</small></span>
       </div>
-      <button type="button" className="newsearch" onClick={() => onNavigate("chat")}>
+      <button type="button" className="newsearch" onClick={onNewSearch}>
         <PlusIcon className="sm" /> <span>Nueva búsqueda</span>
       </button>
       <div className="nav-scroll">
@@ -58,10 +66,28 @@ export default function Sidebar({ user, view, documentCount, onNavigate, onLogou
               <button type="button" className={view === id ? "on" : ""} onClick={() => onNavigate(id)}>
                 <Icon /> <span>{label}</span>
                 {id === "documentos" && <span className="count">{documentCount}</span>}
+                {id === "favoritos" && favoriteCount > 0 && <span className="count">{favoriteCount}</span>}
               </button>
             </li>
           ))}
         </ul>
+        {conversations.length > 0 && (
+          <>
+            <div className="nav-label">Historial</div>
+            <ul className="nav history">
+              {conversations.map((c) => (
+                <li key={c.id}>
+                  <button type="button" className={c.id === conversationId ? "on" : ""} onClick={() => onOpenConversation(c.id)} title={c.title}>
+                    <ChatIcon /> <span className="hist-t">{c.title}</span>
+                  </button>
+                  <button type="button" className="btn-icon sm hist-del" onClick={() => onDeleteConversation(c.id)} title="Borrar del historial" aria-label={`Borrar «${c.title}» del historial`}>
+                    <XIcon size={13} />
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
         {isAdmin && (
           <>
             <div className="nav-label">Administración</div>

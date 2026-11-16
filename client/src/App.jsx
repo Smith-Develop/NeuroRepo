@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { api } from "./api";
 import Chat from "./Chat";
 import Explorer from "./Explorer";
@@ -9,6 +9,9 @@ import Groups from "./Groups";
 import ActivityLog from "./ActivityLog";
 import LibraryPicker from "./LibraryPicker";
 import Toaster from "./Toaster";
+import Favorites from "./Favorites";
+import { toast } from "./toast";
+import { newConversationId, deleteConversation } from "./chatHistory";
 import { AppContext } from "./appContext";
 
 export default function App() {
@@ -18,7 +21,9 @@ export default function App() {
   const [docsVersion, setDocsVersion] = useState(0); // sube cada vez que la biblioteca puede haber cambiado
   const [error, setError] = useState("");
   const [libraryOpen, setLibraryOpen] = useState(false);
-  const [chatKey, setChatKey] = useState(0);
+  const [conversationId, setConversationId] = useState(newConversationId);
+  const [favorites, setFavorites] = useState(null); // documentos favoritos (null = cargando)
+  const favoriteIds = useMemo(() => new Set((favorites || []).map((d) => d._id)), [favorites]);
 
   const load = useCallback(async () => {
     try {
@@ -31,11 +36,30 @@ export default function App() {
     api.me().then(({ user }) => setUser(user)).catch(() => setUser(null));
   }, []);
   useEffect(() => { if (user) load(); }, [user, load]);
+  useEffect(() => {
+    if (!user) return;
+    api.favorites().then(setFavorites).catch(() => setFavorites([]));
+  }, [user]);
+
+  const toggleFavorite = useCallback(async (doc) => {
+    const was = favoriteIds.has(doc._id);
+    setFavorites((list) => (was ? (list || []).filter((d) => d._id !== doc._id) : [doc, ...(list || [])]));
+    try {
+      if (was) await api.removeFavorite(doc._id);
+      else await api.addFavorite(doc._id);
+      toast(was ? "Quitado de favoritos" : "Añadido a favoritos");
+    } catch (e) {
+      setFavorites((list) => (was ? [doc, ...(list || [])] : (list || []).filter((d) => d._id !== doc._id)));
+      toast(e.message);
+    }
+  }, [favoriteIds]);
 
   async function logout() {
     await api.logout().catch(() => {});
     setUser(null);
     setSummary(null);
+    setFavorites(null);
+    setConversationId(newConversationId());
     setView("chat");
   }
 
@@ -45,20 +69,38 @@ export default function App() {
   }
 
   function navigate(id) {
-    if (id === "chat" && view === "chat") setChatKey((k) => k + 1); // nueva búsqueda
+    if (id === "chat" && view === "chat") setConversationId(newConversationId()); // nueva búsqueda
     setView(id);
+  }
+
+  function newSearch() {
+    setConversationId(newConversationId());
+    setView("chat");
+  }
+
+  function openConversation(id) {
+    setConversationId(id);
+    setView("chat");
+  }
+
+  function removeConversation(id) {
+    deleteConversation(user._id, id);
+    if (id === conversationId) setConversationId(newConversationId());
   }
 
   if (user === undefined) return null;
   if (!user) return <Login onLogin={setUser} />;
 
   return (
-    <AppContext.Provider value={{ user, reloadDocuments: load }}>
+    <AppContext.Provider value={{ user, reloadDocuments: load, favorites, favoriteIds, toggleFavorite }}>
     <div className="app">
-      <Sidebar user={user} view={view} documentCount={summary?.total ?? 0} onNavigate={navigate} onLogout={logout} onOpenLibrary={() => setLibraryOpen(true)} />
+      <Sidebar user={user} view={view} documentCount={summary?.total ?? 0} favoriteCount={favorites?.length ?? 0}
+        conversationId={view === "chat" ? conversationId : null} onNewSearch={newSearch} onOpenConversation={openConversation} onDeleteConversation={removeConversation}
+        onNavigate={navigate} onLogout={logout} onOpenLibrary={() => setLibraryOpen(true)} />
       <main className="main">
         <section className="view">
-          {view === "chat" && <Chat key={chatKey} user={user} topFolders={summary?.topFolders ?? []} onOpenDocumentos={() => setView("documentos")} />}
+          {view === "chat" && <Chat key={conversationId} conversationId={conversationId} user={user} topFolders={summary?.topFolders ?? []} onOpenDocumentos={() => setView("documentos")} onNew={newSearch} />}
+          {view === "favoritos" && <Favorites />}
           {view === "documentos" && <Explorer summary={summary} docsVersion={docsVersion} user={user} onOpenLibrary={() => setLibraryOpen(true)} />}
           {view === "usuarios" && user.role === "admin" && <Users currentUser={user} />}
           {view === "grupos" && user.role === "admin" && <Groups />}

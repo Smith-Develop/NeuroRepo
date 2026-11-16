@@ -555,3 +555,27 @@ button.ft-pick.on { color: var(--text); background: var(--accent-soft); }
   .res .side { flex-direction: row; width: 100%; justify-content: space-between; align-items: center; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* Historial de conversaciones (barra lateral) */
+.nav.history li { position: relative; }
+.nav.history button.on::before { display: none; }
+.nav.history .hist-t { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-right: 22px; }
+.nav.history .hist-del { position: absolute; right: 3px; top: 3px; opacity: 0; }
+.nav.history li:hover .hist-del, .nav.history .hist-del:focus-visible { opacity: 1; }
+
+/* Favoritos */
+.res .fav.on { color: var(--warn); }
+.res .fav.on:hover { color: var(--warn); }
+
+/* Modo avanzado: respuesta con IA y citas */
+.composer .bar .seg button { height: 24px; padding: 0 9px; font-size: 12px; }
+.ai-badge { display: inline-flex; align-items: center; gap: 5px; margin-bottom: 8px; }
+.answer { white-space: pre-wrap; font-size: 14px; line-height: 1.6; padding: 12px 14px; border-radius: 12px; background: var(--surface-2); border: 1px solid var(--accent-line); }
+.ai-note { font-size: 12px; color: var(--text-3); margin-top: 6px !important; }
+.cite { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding: 0 4px; margin: 0 2px; border-radius: 5px; font-size: 11px; font-weight: 600; vertical-align: 1px; background: var(--accent-soft); color: var(--accent-text); }
+.res .t .cite { margin: 0 6px 0 0; }
+@media (max-width: 560px) {
+  .composer .bar .tip, .composer .bar .seg-lbl { display: none; }
+  .composer .bar .scope { min-width: 0; }
+  .composer .bar .scope span { max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+}
