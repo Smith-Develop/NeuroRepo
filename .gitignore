@@ -6,3 +6,8 @@ documentos-prueba/
 
 # Paquetes .apk del OCR para el paquete offline (van en el zip, no en git)
 vendor/ocr-apk/*.apk
+
+# Instaladores de la pre-instalación (van en el zip/partes, no en git)
+pre-instalacion/instaladores/**/*.exe
+pre-instalacion/instaladores/**/*.parte*
+pre-instalacion/instaladores/**/*.msi

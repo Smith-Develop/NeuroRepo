@@ -1,0 +1,3 @@
+Pon aquí el instalador de WSL de tu arquitectura (o los dos):
+  wsl.<versión>.x64.msi     y/o     wsl.<versión>.arm64.msi
+Se descargan de https://github.com/microsoft/WSL/releases/latest (apartado "Assets").

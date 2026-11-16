@@ -333,7 +333,16 @@ falta).
   un `.gguf` de la carpeta del proyecto (Qwen2.5-1.5B-Instruct q4_k_m de Hugging Face) al contenedor
   `ollama` y lo registra con `ollama create <OLLAMA_MODEL>` (Ollama detecta la plantilla de chat del
   propio GGUF). Probado con `ollama/ollama` sin acceso al registro.
-- `instalar.ps1` y `cargar-modelo.ps1` van en UTF-8 **con BOM**: Windows PowerShell 5.1 lee sin BOM como ANSI (tildes rotas,
+- **Pre-instalación sin internet** (`pre-instalacion/`, se entrega como carpeta «Pre-instalacion»):
+  `Preinstalar.bat` → `preinstalar.ps1` (se autoeleva y recuerda el usuario normal) pregunta x64/arm64
+  (propone el detectado con `Win32_Processor.Architecture`, 12 = ARM64), une los instaladores troceados
+  (`<archivo>.parteN`, porque cada archivo que se entrega por el chat tiene un límite de ~400 MB),
+  comprueba `SHA256SUMS.txt`, avisa si la virtualización está desactivada, activa
+  `Microsoft-Windows-Subsystem-Linux` + `VirtualMachinePlatform`, instala `wsl.<ver>.<arq>.msi` y
+  `docker-desktop-<arq>.exe install --quiet --accept-license --backend=wsl-2`, añade el usuario a
+  `docker-users` y ofrece reiniciar. Los binarios no van en git. En PowerShell 5.1 los ejecutables
+  externos se llaman con `Sin-Parar` (con `Stop`, redirigir su stderr lanza excepción).
+- `instalar.ps1`, `cargar-modelo.ps1` y `preinstalar.ps1` van en UTF-8 **con BOM**: Windows PowerShell 5.1 lee sin BOM como ANSI (tildes rotas,
   y algunos bytes UTF-8 pasan por comillas tipográficas).
 - No sustituye a Docker Compose ni cambia nada de la arquitectura: es solo una capa de conveniencia
   sobre el mismo `docker-compose.yml`/`docker-compose.local.yml` que ya se usa en local y en Coolify.

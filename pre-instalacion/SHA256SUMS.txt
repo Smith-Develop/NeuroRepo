@@ -1,0 +1,2 @@
+312535365fda69082db216fe2828da09b1453b9e9b8beed8e45aea805cdcb7a5  instaladores/docker/docker-desktop-arm64.exe
+a5e299131c9c53d60f3f752b162078945eb5faf6eedcf0be20a214c6e6cea444  instaladores/docker/docker-desktop-x64.exe
