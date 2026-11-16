@@ -34,9 +34,14 @@ Nada depende de APIs de pago.
   toggle está al pie de `Sidebar.jsx`; `src/theme.js` guarda la preferencia en `localStorage` y un
   `<script>` en `index.html` la aplica antes de pintar (sin parpadeo). El HTML de la vista previa de
   Word/Excel lee los tokens en el momento de abrirse, así que también sale en el tema activo.
-- Extracción de texto: `pdf-parse` (PDF), `mammoth` (`.docx`), `xlsx` (SheetJS — instalado desde
-  `cdn.sheetjs.com`, no desde npm, porque la versión publicada en el registro de npm tiene vulnerabilidades
-  sin parchear; la build de SheetJS sí las corrige). `.txt`/`.md`/`.csv` se leen directamente.
+- Extracción de texto (`server/src/extract.js`): `pdf-parse` (PDF), `mammoth` (`.docx/.docm/.dotx`),
+  `word-extractor` (`.doc` antiguo, MIT, JS puro), `xlsx` (SheetJS: `.xlsx/.xlsm/.xlsb/.xls/.ods` —
+  instalado desde `cdn.sheetjs.com`, no desde npm, porque la versión publicada en el registro de npm
+  tiene vulnerabilidades sin parchear; la build de SheetJS sí las corrige), `jszip` (ya venía con
+  mammoth; `.pptx` y `.odt/.odp`), RTF a mano, y texto plano (scripts `.bat/.ps1`, `.log`, `.ini`,
+  `.json`, `.xml`, `.sql`, código…) más cualquier otro archivo que «parezca texto» (sin bytes nulos),
+  decodificado según su BOM: UTF-8, UTF-16 (PowerShell) o, si no es UTF-8 válido, Windows-1252. Sin
+  soporte: `.ppt` binario y `.msg` de Outlook.
 - IA: Ollama vía REST (`fetch`, sin SDK): respaldo de la búsqueda simple y respuestas del modo avanzado
   (ver más abajo). Modelo por defecto `qwen2.5:1.5b` (`OLLAMA_MODEL`).
 - MongoDB 7. Índice de texto en español sobre los documentos (`server/src/models.js`).
@@ -61,8 +66,12 @@ Nada depende de APIs de pago.
   carpeta el historial sigue a la ruta nueva). Las rutas guardadas son relativas a `LIBRARY_ROOT`, no a la
   biblioteca activa. Límite: lo que se edite directamente en el disco del host no deja versión.
 - `server/src/indexer.js` – `scanLibrary()` recorre la biblioteca activa (`fs.readdir` recursivo nativo,
-  sin librería), extrae texto solo de lo nuevo/cambiado (compara `mtimeMs`/`size`) y borra de Mongo lo que
-  ya no existe en disco. `scheduleIndexing()` lo lanza al arrancar y cada `SCAN_INTERVAL_MINUTES`.
+  sin librería), extrae texto (`extract.js`) solo de lo nuevo/cambiado (compara `mtimeMs`/`size`) y borra
+  de Mongo lo que ya no existe en disco. Guarda `hasText` y `extractorVersion`: un archivo sin cambios
+  pero que se quedó sin texto con un `EXTRACTOR_VERSION` anterior se vuelve a leer (así entraron los
+  `.doc`). `markLegacyHasText()` calcula `hasText` de lo antiguo **antes** del recorrido (si no, todo
+  parecería sin texto y se releería, OCR incluido); usa un update con pipeline, que en Mongoose 9 exige
+  `{ updatePipeline: true }`. `scheduleIndexing()` lo lanza al arrancar y cada `SCAN_INTERVAL_MINUTES`.
   Imágenes (`OCR_IMAGE_EXTS`) y PDF con menos de 50 caracteres por página (escaneos) quedan con
   `ocrStatus: "pending"`; tras cada escaneo, `processOcrQueue()` los procesa de uno en uno (lo último
   indexado primero) y solo guarda el texto si el archivo no cambió entretanto. Los documentos indexados
@@ -85,8 +94,10 @@ Nada depende de APIs de pago.
   convierte la pregunta en palabras clave para reintentar la búsqueda (modo simple).
   `answerFromDocuments(question, sources)` (modo avanzado): responde SOLO con los fragmentos dados,
   numerados `[n]`, citándolos, y dice «No lo encuentro en los documentos» si no está ahí
-  (`num_ctx` 8192, `num_predict` 600). Los fragmentos salen de `bestPassages` (`search.js`): trozos de
-  600 caracteres con más raíces de la pregunta, hasta 1500 por documento. Con el modelo de 1,5B las
+  (`num_ctx` 8192, `num_predict` 500), conversacional: recibe los turnos anteriores (`history`) como
+  mensajes previos y responde al grano (1–4 frases o pasos). Los fragmentos salen de `bestPassages`
+  (`search.js`): trozos de 600 caracteres con más raíces de la pregunta, hasta 3500 del primer documento
+  y 1200 del segundo (antes eran 4 documentos de 1500: el modelo pequeño los mezclaba y citaba mal). Con el modelo de 1,5B las
   respuestas son rápidas (~5 s en CPU) pero a veces imprecisas: la UI avisa de comprobarlas.
 - `server/src/routes.js` – API bajo `/api`:
   - `GET /documents?q=` (cualquier logueado) → búsqueda con `excerpt` por documento; `?name=&type=`
@@ -99,9 +110,13 @@ Nada depende de APIs de pago.
     es de una carpeta sin permiso, devuelve el `blockedMessage` de esa carpeta **sin llamar a la IA**; si
     no hay nada razonable (`score` por debajo de `AI_FALLBACK_SCORE`, por defecto 0.3), pide a la IA
     mejores palabras clave y reintenta una vez. `scope` (carpeta de primer nivel) se filtra en el
-    servidor. Con `mode: "advanced"`, los `ANSWER_SOURCES` (4) primeros resultados **ya filtrados por
+    servidor. Con `mode: "advanced"`, los `ANSWER_SOURCES` (2) primeros resultados **ya filtrados por
     permisos** van a `answerFromDocuments` → `{results, answer, sourceCount}` (`[1]` = `results[0]`); si
-    la IA falla, `{results, aiError}` (los documentos se muestran igual).
+    la IA falla, `{results, aiError}` (los documentos se muestran igual). `history: [{q, a}]` (los 3
+    últimos turnos): si la pregunta sola no encuentra nada razonable, se busca junto con la anterior
+    («¿y si falla?»).
+  - `GET /documents/:id/text` → `{text}`: el texto extraído, para la vista previa de lo que no tiene
+    visor propio (`.doc`, `.rtf`, `.pptx`, `.odt`, scripts, logs…).
   - `GET /favorites`, `PUT /favorites/:id`, `DELETE /favorites/:id` (cualquier logueado) → favoritos del
     propio usuario (`User.favorites`, como mucho 300). Añadir comprueba permiso (`findAccessibleDoc`) y
     el listado vuelve a filtrar con `canSeeFolder` (por si el grupo cambió); el más reciente, primero.
@@ -149,7 +164,9 @@ Nada depende de APIs de pago.
 - `server/src/resetAdmin.js` – recuperación de contraseña sin email: `docker compose exec app node
   src/resetAdmin.js <DNI>` (sin DNI lista los admins). Pide la nueva contraseña sin eco, cierra sus
   sesiones y lo deja en el Registro. En Windows, `Restablecer-admin.bat` (raíz del repo) lanza lo mismo.
-- `client/src/Chat.jsx` – conmutador «Simple / Avanzada» (`.seg` en la barra del compositor; se
+- `client/src/Chat.jsx` – en avanzada manda `conversationHistory(messages)` y solo enseña el documento
+  que más coincide (más los que cite la respuesta, `visibleResults`); el resto, tras el botón «¿Quieres
+  ver N archivos relacionados más?» (`expanded` en el mensaje). Conmutador «Simple / Avanzada» (`.seg` en la barra del compositor; se
   recuerda en `localStorage` `neurorepo.chatMode`). En avanzada pinta la respuesta (`AnswerText`, citas
   `[n]` resaltadas) y numera las tarjetas citadas (`DocumentCard cite`). Cada conversación tiene un id
   (`App.jsx` lo crea; `key` del componente) y se guarda en el historial en cada cambio; una búsqueda que
@@ -163,7 +180,8 @@ Nada depende de APIs de pago.
   una lupa que rebota) para la espera de una búsqueda. Respeta `prefers-reduced-motion`. Se reutiliza en
   `Login.jsx` y en la marca de `Sidebar.jsx` para que la identidad sea consistente en toda la app.
 - `client/src/DocumentCard.jsx` – exporta los conjuntos de extensiones (`IMAGE_EXT`, `TEXT_EXT`,
-  `VIDEO_EXT`, `AUDIO_EXT`, `OFFICE_EXT`, `PREVIEWABLE` = pdf/imagen/texto/Word/Excel) e `iconFor`/`formatSize`. El nombre del
+  `VIDEO_EXT`, `AUDIO_EXT`, `OFFICE_EXT`, `PREVIEWABLE` = pdf/imagen/texto/Word/Excel) e `iconFor`/`formatSize`.
+  `canPreviewDoc(doc)`: `PREVIEWABLE` o cualquier documento con `hasText` (se ve como texto en el modal). El nombre del
   archivo es clickable (abre `DocumentModal`) si es `PREVIEWABLE`; vídeo y audio se reproducen **en la
   propia tarjeta** (`<video>`/`<audio controls>`, sin modal) tal como pidió el cliente ("se puedan
   reproducir desde el chat"). En el chat el nombre y el icono del archivo abren la vista previa (igual

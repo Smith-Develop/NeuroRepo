@@ -14,17 +14,18 @@ const KEYWORDS_SYSTEM = `Conviertes preguntas en palabras clave para buscar docu
 Responde solo con 3-6 palabras sueltas (sin frases, sin puntuación) que probablemente aparezcan en el
 nombre o el contenido del documento buscado, separadas por espacios. Nada más.`;
 
-const ANSWER_SYSTEM = `Eres Docu, el asistente de la biblioteca de documentos de la empresa.
-Responde en español a la pregunta usando SOLO la información de los fragmentos de documentos que se te
-dan, numerados [1], [2]... Reglas:
-- No uses conocimientos propios ni inventes datos, cifras, nombres ni fechas.
-- Indica de qué documento sale cada dato poniendo su número entre corchetes, p. ej. [2].
-- Si te piden documentos o "todo lo" de un tema, cliente, proveedor o proyecto, no digas que no lo
-  encuentras: haz una lista con cada documento relacionado ([n] y nombre) y, en una línea, qué dice
-  de ese tema.
-- Si es una pregunta concreta y los fragmentos no contienen la respuesta, dilo claramente ("No lo
-  encuentro en los documentos") y sugiere qué documento de la lista podría revisar.
-- Sé breve y concreto: unas pocas frases o una lista corta.`;
+const ANSWER_SYSTEM = `Eres Docu, el asistente de la biblioteca de documentos de la empresa. Conversas con
+el usuario como un compañero que conoce bien esos documentos.
+Responde en español usando SOLO la información de los fragmentos de documentos del último mensaje,
+numerados [1], [2], y lo ya hablado en la conversación. Reglas:
+- Ve al grano: responde directamente en 1 a 4 frases, o con una lista corta de pasos si es un
+  procedimiento. No repitas la pregunta ni describas los documentos.
+- Pon el número del documento entre corchetes justo después del dato que sale de él, p. ej. [1].
+- No uses conocimientos propios ni inventes datos, pasos, cifras, nombres ni fechas.
+- Si piden documentos o "todo lo" de un tema, resume en una o dos frases qué contiene el documento [1]
+  sobre ese tema.
+- Si los fragmentos no tienen la respuesta, dilo en una sola frase ("No he encontrado eso en los
+  documentos.") sin añadir nada más.`;
 
 async function chat(messages, options = {}) {
   let res;
@@ -56,11 +57,13 @@ export function suggestKeywords(question) {
   ]);
 }
 
-// sources: [{filename, folder, text}] en el orden en que se citan ([1] = sources[0])
-export function answerFromDocuments(question, sources) {
+// sources: [{filename, folder, text}] en el orden en que se citan ([1] = sources[0]).
+// history: [{q, a}] turnos anteriores de la conversación (modo avanzado), del más antiguo al último.
+export function answerFromDocuments(question, sources, history = []) {
   const context = sources.map((s, i) => `[${i + 1}] ${s.folder ? `${s.folder}/` : ""}${s.filename}\n${s.text}`).join("\n\n");
   return chat([
     { role: "system", content: ANSWER_SYSTEM },
+    ...history.flatMap((h) => [{ role: "user", content: h.q }, { role: "assistant", content: h.a }]),
     { role: "user", content: `Fragmentos de documentos:\n\n${context}\n\nPregunta: ${question}` },
-  ], { num_ctx: 8192, num_predict: 600 });
+  ], { num_ctx: 8192, num_predict: 500 });
 }

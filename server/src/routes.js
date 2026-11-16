@@ -16,6 +16,7 @@ import { recordVersion, trash, purgeTrashItem, renameVersionPaths, TRASH_DAYS } 
 import { scanLibrary } from "./indexer.js";
 import { logActivity } from "./activityLog.js";
 import { ocrAvailable } from "./ocr.js";
+import { SHEET_EXTS, WORDX_EXTS } from "./extract.js";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024, files: 20 } });
 
@@ -34,7 +35,7 @@ async function blockedMessageFor(folder) {
   return configs[0]?.blockedMessage || DEFAULT_BLOCKED_MESSAGE;
 }
 
-const LIST_FIELDS = "filename ext folder topFolder size mtimeMs textOk";
+const LIST_FIELDS = "filename ext folder topFolder size mtimeMs textOk hasText";
 const escapeRegex = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 const TYPE_EXTS = { pdf: [".pdf"], doc: [".doc", ".docx"], xls: [".xls", ".xlsx", ".csv"] };
 const FILTER_LIMIT = 200;
@@ -87,11 +88,16 @@ r.get("/documents/children", wrap(async (req, res) => {
 // Chat: busca por coincidencia de texto; solo si no hay nada razonable, pide a la IA mejores palabras clave.
 // Modo avanzado (mode: "advanced"): además, la IA responde a la pregunta con fragmentos de los
 // documentos encontrados que el usuario puede ver, citándolos ([1] = results[0]...).
-const ANSWER_SOURCES = 4;
+const ANSWER_SOURCES = 2; // pocos y leídos a fondo: con 4 el modelo pequeño mezclaba los documentos
+const HISTORY_TURNS = 3;
 r.post("/ask", wrap(async (req, res) => {
   const question = text(req.body?.question, 500);
   const advanced = req.body?.mode === "advanced";
   const scope = text(req.body?.scope, 500); // carpeta de primer nivel elegida en el chat ("" = todas)
+  // Modo avanzado conversacional: las últimas preguntas/respuestas, para entender las de seguimiento
+  const history = advanced && Array.isArray(req.body?.history)
+    ? req.body.history.slice(-HISTORY_TURNS).map((h) => ({ q: text(h?.q, 500), a: text(h?.a, 1000) })).filter((h) => h.q && h.a)
+    : [];
   if (!question) return res.status(400).json({ error: "Escribe qué documento buscas." });
 
   let found = await searchDocuments(question);
@@ -101,6 +107,17 @@ r.post("/ask", wrap(async (req, res) => {
     return res.json({ results: [], blocked: true, folder, message: await blockedMessageFor(folder) });
   }
   await logActivity(req, "search.query", question);
+
+  // Pregunta de seguimiento ("¿y desde el móvil?"): si sola no encuentra nada razonable, se busca
+  // junto con la pregunta anterior
+  let searchQuery = question;
+  if (history.length && (!found.length || topScore(found) < AI_FALLBACK_SCORE)) {
+    const withContext = await searchDocuments(`${history.at(-1).q} ${question}`);
+    if (withContext.length && topScore(withContext) > topScore(found)) {
+      found = withContext;
+      searchQuery = `${history.at(-1).q} ${question}`;
+    }
+  }
 
   let usedAI = false;
   if (!found.length || topScore(found) < AI_FALLBACK_SCORE) {
@@ -122,9 +139,10 @@ r.post("/ask", wrap(async (req, res) => {
   const sourcesDocs = results.slice(0, ANSWER_SOURCES);
   const texts = await Document.find({ _id: { $in: sourcesDocs.map((d) => d._id) } }, "extractedText").lean();
   const textById = new Map(texts.map((t) => [String(t._id), t.extractedText]));
-  const sources = sourcesDocs.map((d) => ({ filename: d.filename, folder: d.folder, text: bestPassages(question, textById.get(String(d._id))) }));
+  // El primero (el que más coincide) se lee mucho más a fondo que el segundo
+  const sources = sourcesDocs.map((d, i) => ({ filename: d.filename, folder: d.folder, text: bestPassages(searchQuery, textById.get(String(d._id)), i === 0 ? 3500 : 1200) }));
   try {
-    const answer = await answerFromDocuments(question, sources);
+    const answer = await answerFromDocuments(question, sources, history);
     res.json({ results, usedAI, answer, sourceCount: sources.length });
   } catch (e) {
     // Sin IA disponible: se devuelven igualmente los documentos, con el motivo
@@ -186,23 +204,30 @@ r.get("/documents/:id/view", wrap(async (req, res) => {
 
 // Vista previa de Word/Excel como HTML (el cliente lo pinta en un iframe con sandbox, sin scripts).
 // Las hojas se recortan para que un Excel enorme no bloquee el servidor ni el navegador.
-const SHEET_EXTS = new Set([".xlsx", ".xls", ".csv"]);
 const PREVIEW_MAX_FILE = 30 * 1024 * 1024;
 const PREVIEW_MAX_ROWS = 2000;
 const PREVIEW_MAX_COLS = 50;
 const PREVIEW_MAX_HTML = 8 * 1024 * 1024;
 
+// Texto extraído (ya decodificado) para la vista previa de lo que no tiene visor propio: .doc, .rtf,
+// .pptx, .odt, scripts .bat/.ps1, logs, configuración...
+r.get("/documents/:id/text", wrap(async (req, res) => {
+  const doc = await findAccessibleDoc(req, res);
+  if (!doc) return;
+  res.json({ text: doc.extractedText || "" });
+}));
+
 r.get("/documents/:id/preview", wrap(async (req, res) => {
   const doc = await findAccessibleDoc(req, res);
   if (!doc) return;
-  if (doc.ext !== ".docx" && !SHEET_EXTS.has(doc.ext)) return res.status(415).json({ error: "Este tipo de archivo no tiene vista previa." });
+  if (!WORDX_EXTS.has(doc.ext) && !SHEET_EXTS.has(doc.ext)) return res.status(415).json({ error: "Este tipo de archivo no tiene vista previa." });
   if (doc.size > PREVIEW_MAX_FILE) return res.status(413).json({ error: "El archivo es demasiado grande para la vista previa. Descárgalo para abrirlo." });
   const abs = safeResolve(await getActiveLibraryPath(), doc.path);
 
   let sheets;
   let truncated = false;
   try {
-    if (doc.ext === ".docx") {
+    if (WORDX_EXTS.has(doc.ext)) {
       sheets = [{ name: "", html: (await mammoth.convertToHtml({ path: abs })).value }];
     } else {
       const book = XLSX.read(readFileSync(abs));

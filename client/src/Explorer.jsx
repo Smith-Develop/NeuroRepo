@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
-import { badgeFor, formatSize, formatDate, PREVIEWABLE, IMAGE_EXT, VIDEO_EXT, AUDIO_EXT } from "./DocumentCard";
+import { badgeFor, formatSize, formatDate, canPreviewDoc, IMAGE_EXT, VIDEO_EXT, AUDIO_EXT } from "./DocumentCard";
 import DocumentModal from "./DocumentModal";
 import { toast } from "./toast";
 import { AppContext } from "./appContext";
@@ -36,7 +36,7 @@ function countAll(node) {
   return node.files.length + [...node.folders.values()].reduce((s, n) => s + countAll(n), 0);
 }
 function download(doc) { toast(`Descargando ${doc.filename}`); }
-const canPreview = (doc) => PREVIEWABLE.has(doc.ext) || VIDEO_EXT.has(doc.ext) || AUDIO_EXT.has(doc.ext);
+const canPreview = (doc) => canPreviewDoc(doc) || VIDEO_EXT.has(doc.ext) || AUDIO_EXT.has(doc.ext);
 
 // El admin abre el modal de cualquier archivo (aunque no tenga vista previa) para ver sus versiones
 function useCanOpen() {

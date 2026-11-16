@@ -1,37 +1,18 @@
-import { readFileSync, readdirSync, statSync } from "node:fs";
+import { readdirSync, statSync } from "node:fs";
 import path from "node:path";
-import mammoth from "mammoth";
-import pdfParse from "pdf-parse";
-import * as XLSX from "xlsx";
 import { Document } from "./models.js";
 import { getActiveLibraryPath, getAppConfig, safeResolve } from "./library.js";
 import { ocrAvailable, ocrImage, ocrPdf, OCR_IMAGE_EXTS } from "./ocr.js";
+import { extractText, EXTRACTOR_VERSION } from "./extract.js";
 import { purgeExpiredTrash } from "./history.js";
 
 const MAX_TEXT = 200_000; // recorte por documento, para no disparar el tamaño del índice
-const TEXT_EXTS = new Set([".txt", ".md", ".csv"]);
-const SHEET_EXTS = new Set([".xlsx", ".xls", ".csv"]);
 
-// Un PDF con menos de esto por página casi seguro que es un escaneo (imágenes sin capa de texto)
-const OCR_MIN_CHARS_PER_PAGE = 50;
-
-async function extractText(absPath, ext) {
-  try {
-    if (ext === ".pdf") {
-      const { text, numpages } = await pdfParse(readFileSync(absPath));
-      return { ok: true, text, needsOcr: text.replace(/\s+/g, "").length < OCR_MIN_CHARS_PER_PAGE * Math.max(1, numpages) };
-    }
-    if (ext === ".docx") return { ok: true, text: (await mammoth.extractRawText({ path: absPath })).value };
-    if (SHEET_EXTS.has(ext) && ext !== ".csv") {
-      const book = XLSX.read(readFileSync(absPath));
-      return { ok: true, text: book.SheetNames.map((name) => XLSX.utils.sheet_to_csv(book.Sheets[name])).join("\n") };
-    }
-    if (TEXT_EXTS.has(ext)) return { ok: true, text: readFileSync(absPath, "utf8") };
-    // sin extracción directa: las imágenes pasan a la cola de OCR; el resto se indexa solo por nombre
-    return { ok: true, text: "", needsOcr: OCR_IMAGE_EXTS.has(ext) };
-  } catch {
-    return { ok: false, text: "" };
-  }
+// Documentos indexados antes de existir "hasText": se calcula una vez a partir del texto guardado
+async function markLegacyHasText() {
+  await Document.updateMany({ hasText: { $exists: false } }, [
+    { $set: { hasText: { $gt: [{ $strLenCP: { $trim: { input: { $ifNull: ["$extractedText", ""] } } } }, 0] } } },
+  ], { updatePipeline: true }); // Mongoose 9 exige declarar las actualizaciones con pipeline
 }
 
 // Documentos indexados antes de existir el OCR: no se vuelven a extraer (no han cambiado), así que se
@@ -62,7 +43,7 @@ export async function processOcrQueue() {
         const abs = safeResolve(await getActiveLibraryPath(), doc.path);
         const text = (doc.ext === ".pdf" ? await ocrPdf(abs) : await ocrImage(abs)).trim();
         update = { ocrStatus: "done" };
-        if (text.length > doc.extractedText.trim().length) update.extractedText = text.slice(0, MAX_TEXT);
+        if (text.length > doc.extractedText.trim().length) Object.assign(update, { extractedText: text.slice(0, MAX_TEXT), hasText: true });
       } catch (e) {
         console.error(`OCR fallido en ${doc.path}: ${e.message}`);
         update = { ocrStatus: "failed" };
@@ -103,6 +84,7 @@ export async function scanLibrary() {
   if (running) return;
   running = true;
   try {
+    await markLegacyHasText(); // antes del recorrido: sin esto, todo lo antiguo parecería "sin texto" y se releería
     const root = await getActiveLibraryPath();
     const relFiles = walk(root);
     const seenPaths = [];
@@ -114,8 +96,10 @@ export async function scanLibrary() {
       const topFolder = folder.split("/")[0] || "";
       seenPaths.push(rel);
 
-      const existing = await Document.findOne({ path: rel }, "mtimeMs size").lean();
-      if (existing && existing.mtimeMs === stat.mtimeMs && existing.size === stat.size) continue;
+      const existing = await Document.findOne({ path: rel }, "mtimeMs size hasText extractorVersion").lean();
+      const unchanged = existing && existing.mtimeMs === stat.mtimeMs && existing.size === stat.size;
+      // Sin cambios, salvo que se quedara sin texto con un extractor anterior que no sabía leerlo
+      if (unchanged && (existing.hasText || (existing.extractorVersion || 0) >= EXTRACTOR_VERSION)) continue;
 
       const extracted = await extractText(abs, ext);
       await Document.updateOne(
@@ -123,6 +107,7 @@ export async function scanLibrary() {
         {
           filename: path.basename(rel), ext, folder, topFolder, size: stat.size, mtimeMs: stat.mtimeMs,
           extractedText: extracted.text.slice(0, MAX_TEXT), textOk: extracted.ok, ocrStatus: extracted.needsOcr ? "pending" : "none",
+          hasText: extracted.text.trim().length > 0, extractorVersion: EXTRACTOR_VERSION,
         },
         { upsert: true },
       );

@@ -32,7 +32,7 @@ export async function searchDocuments(query, limit = 30) {
   // Una sola proyección: encadenar .select() después pisaría el $meta y dejaría "score" siempre undefined
   const found = await Document.find(
     { $text: { $search: query } },
-    { filename: 1, ext: 1, folder: 1, topFolder: 1, size: 1, mtimeMs: 1, textOk: 1, extractedText: 1, score: { $meta: "textScore" } },
+    { filename: 1, ext: 1, folder: 1, topFolder: 1, size: 1, mtimeMs: 1, textOk: 1, hasText: 1, extractedText: 1, score: { $meta: "textScore" } },
   ).sort({ score: { $meta: "textScore" } }).limit(limit).lean();
   return rerank(query, found).map((d) => {
     const { extractedText, ...rest } = d;

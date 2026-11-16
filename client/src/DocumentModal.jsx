@@ -83,10 +83,11 @@ export default function DocumentModal({ doc, onClose }) {
   const viewSrc = api.viewUrl(doc._id) + (rev ? `?r=${rev}` : "");
   const isPdf = doc.ext === ".pdf";
   const isImage = IMAGE_EXT.has(doc.ext);
-  const isText = TEXT_EXT.has(doc.ext);
   const isOffice = OFFICE_EXT.has(doc.ext);
   const isVideo = VIDEO_EXT.has(doc.ext);
   const isAudio = AUDIO_EXT.has(doc.ext);
+  // Texto: el extraído en el índice (ya decodificado: UTF-16 de PowerShell, ANSI de Windows, .doc, .pptx...)
+  const isText = !isPdf && !isImage && !isOffice && !isVideo && !isAudio && (TEXT_EXT.has(doc.ext) || !!doc.hasText);
   const { label, cls } = badgeFor(doc.ext);
 
   useEffect(() => {
@@ -103,12 +104,11 @@ export default function DocumentModal({ doc, onClose }) {
     if (!isText) return;
     let cancelled = false;
     setText(null);
-    fetch(viewSrc, { credentials: "include" })
-      .then((r) => { if (!r.ok) throw new Error("No se pudo abrir el archivo."); return r.text(); })
-      .then((t) => { if (!cancelled) setText(t); })
+    api.documentText(doc._id)
+      .then((r) => { if (!cancelled) setText(r.text || "(Este documento no tiene texto legible.)"); })
       .catch((e) => { if (!cancelled) setError(e.message); });
     return () => { cancelled = true; };
-  }, [viewSrc, isText]);
+  }, [doc._id, isText, rev]);
 
   useEffect(() => {
     function onKey(e) { if (e.key === "Escape") onClose(); }

@@ -20,6 +20,24 @@ function initialMode() {
 // Una búsqueda que seguía en marcha cuando se guardó (recarga, cerrar pestaña) no se puede reanudar
 const restorable = (messages) => messages.map((m) => (m.kind === "loading" ? { ...m, kind: "error", text: "La búsqueda se interrumpió. Vuelve a lanzarla." } : m));
 
+// Turnos anteriores del modo avanzado (pregunta + respuesta de la IA), para que el servidor entienda
+// las preguntas de seguimiento como en una conversación
+function conversationHistory(messages, max = 3) {
+  const turns = [];
+  for (let i = 0; i < messages.length - 1; i++) {
+    const q = messages[i], a = messages[i + 1];
+    if (q.role === "user" && a.kind === "results" && a.answer) turns.push({ q: q.text, a: a.answer });
+  }
+  return turns.slice(-max);
+}
+
+// Modo avanzado: se muestra el documento que más coincide (y los que cite la respuesta); el resto,
+// solo si el usuario pide verlos
+function visibleResults(m) {
+  if (!m.answer || m.expanded) return m.results;
+  return m.results.filter((_, i) => i === 0 || (i < m.sourceCount && m.answer.includes(`[${i + 1}]`)));
+}
+
 // Texto de la respuesta con las citas [n] resaltadas
 function AnswerText({ text }) {
   const parts = text.split(/(\[\d+\])/g);
@@ -131,7 +149,8 @@ export default function Chat({ user, conversationId, topFolders = [], onOpenDocu
     );
     setBusy(true);
     try {
-      const { results, blocked, folder: blockedFolder, message, usedAI, answer, sourceCount, aiError } = await api.ask(q, mode, scope === "all" ? "" : scope);
+      const history = mode === "advanced" ? conversationHistory(messages) : [];
+      const { results, blocked, folder: blockedFolder, message, usedAI, answer, sourceCount, aiError } = await api.ask(q, mode, scope === "all" ? "" : scope, history);
       if (blocked) {
         replace(reply, { kind: "blocked", text: message, folder: blockedFolder });
       } else {
@@ -213,26 +232,32 @@ export default function Chat({ user, conversationId, topFolders = [], onOpenDocu
                   <div className="bubble">
                     <span className="badge accent ai-badge"><SparkleIcon size={12} />Respuesta con IA</span>
                     <AnswerText text={m.answer} />
-                    <p className="ai-note">Generada a partir de los documentos numerados de abajo: compruébala en el original antes de usarla.</p>
+                    <p className="ai-note">Generada por IA a partir del documento de abajo: compruébala en el original antes de usarla.</p>
                   </div>
                 )}
-                {m.kind === "results" && (
+                {m.kind === "results" && !m.answer && (
                   <div className="bubble">
                     {m.aiError && <p className="error">No he podido preparar la respuesta con IA ({m.aiError}). Te muestro los documentos encontrados.</p>}
                     <p>
                       {m.results.length === 0
                         ? "No he encontrado coincidencias para esa búsqueda. Prueba con otras palabras."
-                        : m.answer
-                          ? `Documentos consultados${m.results.length > m.sourceCount ? ` (los ${m.sourceCount} primeros) y otros relacionados` : ""}:`
-                          : `He encontrado ${m.results.length} documento${m.results.length > 1 ? "s" : ""}${m.usedAI ? " (búsqueda ampliada)" : ""}.`}
+                        : `He encontrado ${m.results.length} documento${m.results.length > 1 ? "s" : ""}${m.usedAI ? " (búsqueda ampliada)" : ""}.`}
                     </p>
                   </div>
                 )}
                 {m.kind === "results" && m.results.length > 0 && (
                   <div className="results">
-                    {m.results.map((d, i) => (
-                      <DocumentCard key={d._id} doc={d} score={d.score} maxScore={m.results[0].score || 1} rank={i} cite={m.answer && i < m.sourceCount ? i + 1 : undefined} />
-                    ))}
+                    {visibleResults(m).map((d) => {
+                      const i = m.results.indexOf(d);
+                      return <DocumentCard key={d._id} doc={d} score={d.score} maxScore={m.results[0].score || 1} rank={i} cite={m.answer && i < m.sourceCount ? i + 1 : undefined} />;
+                    })}
+                  </div>
+                )}
+                {m.kind === "results" && m.answer && !m.expanded && m.results.length > visibleResults(m).length && (
+                  <div className="followups">
+                    <button type="button" className="btn btn-secondary btn-sm" onClick={() => replace(m.id, { expanded: true })}>
+                      ¿Quieres ver {m.results.length - visibleResults(m).length} archivo{m.results.length - visibleResults(m).length > 1 ? "s" : ""} relacionado{m.results.length - visibleResults(m).length > 1 ? "s" : ""} más?
+                    </button>
                   </div>
                 )}
               </div>

@@ -13,6 +13,8 @@ const documentSchema = new mongoose.Schema(
     textOk: { type: Boolean, default: true }, // false si no se pudo extraer texto (protegido, corrupto, formato no soportado)
     // OCR de imágenes y PDF escaneados: lo marca el indexador y lo procesa una cola aparte (ocr.js)
     ocrStatus: { type: String, enum: ["none", "pending", "done", "failed"], default: "none", index: true },
+    hasText: { type: Boolean, default: false }, // hay texto extraído (o de OCR): se puede leer en la vista previa y por la IA
+    extractorVersion: { type: Number, default: 0 }, // versión de extract.js con la que se leyó (ver EXTRACTOR_VERSION)
   },
   { timestamps: true },
 );
