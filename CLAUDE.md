@@ -353,6 +353,13 @@ falta).
   si no, como SYSTEM. El `.env` se escribe sin BOM y con valores entre comillas simples (Node lo lee
   literal). Sin OCR en esta variante. `LIBRARY_ROOT` se normaliza con `path.resolve` (en Windows llega
   con barra final o como `\\servidor\recurso`). Solo x64. Los binarios no van en git.
+  **Comprueba antes de instalar** y muestra el inventario ([OK]/[--]): Node (misma versión → se omite),
+  runtime VC++ (registro), MongoDB (servicio + mismo hash de `mongod.exe` → solo se asegura de que
+  corre), Ollama (`$modoIA`: «propio» en `C:\NeuroRepo\ollama`, «externo» si ya responde el 11434 —se
+  usa tal cual, sin tarea—, «sistema» si hay un `ollama.exe` instalado aparte, «instalar» o «ninguna»;
+  con cualquiera de los tres primeros se salta directamente al modelo) y el modelo (si `/api/tags` ya
+  lo tiene, se omite). Solo se para la tarea de la app (para actualizar sus archivos).
+  `preinstalar.ps1` igual: si `wsl --version` responde, no instala ni pide el `.msi` de WSL.
 - `instalar.ps1`, `cargar-modelo.ps1`, `preinstalar.ps1` e `instalar-windows.ps1` van en UTF-8 **con BOM**: Windows PowerShell 5.1 lee sin BOM como ANSI (tildes rotas,
   y algunos bytes UTF-8 pasan por comillas tipográficas).
 - No sustituye a Docker Compose ni cambia nada de la arquitectura: es solo una capa de conveniencia

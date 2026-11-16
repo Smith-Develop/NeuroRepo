@@ -89,12 +89,18 @@ if (-not (Test-Path $docker)) {
 }
 Comprobar $docker
 
+# WSL moderno (el que necesita Docker) responde a "wsl --version"; el antiguo de Windows, no
+$wslVersion = Sin-Parar { & wsl.exe --version 2>$null }
+$wslInstalado = ($LASTEXITCODE -eq 0) -and $wslVersion
 $wsl = Get-ChildItem -Path "instaladores\wsl\wsl.*.$arq.msi" -ErrorAction SilentlyContinue | Sort-Object Name | Select-Object -Last 1
-if ($wsl) {
+if ($wslInstalado) {
+    Write-Host "WSL ya está instalado, se omite." -ForegroundColor Green
+    $wsl = $null
+} elseif ($wsl) {
     $wslRel = "instaladores\wsl\$($wsl.Name)"
     Comprobar $wslRel
 } else {
-    Write-Host "AVISO: no hay instalador de WSL para $arq en instaladores\wsl (wsl.<versión>.$arq.msi)." -ForegroundColor Yellow
+    Write-Host "AVISO: WSL no está instalado y no hay instalador para $arq en instaladores\wsl (wsl.<versión>.$arq.msi)." -ForegroundColor Yellow
     Write-Host "Docker Desktop necesita una versión reciente de WSL; sin ella intentará actualizarla por internet."
     if ((Read-Host "¿Seguir sin instalar WSL? (s/N)") -notmatch '^[sS]') { Salir 1 }
 }

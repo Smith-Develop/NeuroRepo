@@ -133,61 +133,8 @@ if ($reconfigurar) {
     if ([string]::IsNullOrWhiteSpace($intervalo)) { $intervalo = "15" }
 }
 
-# --- 3. Parar lo que esté en marcha (al actualizar) ---
-Write-Paso "Preparando $Destino"
-foreach ($t in $TareaApp, $TareaIA) { Sin-Parar { Stop-ScheduledTask -TaskName $t -ErrorAction SilentlyContinue } }
-Get-Process node, ollama, "ollama app" -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($Destino, [StringComparison]::OrdinalIgnoreCase) } | Stop-Process -Force
-if (Get-Service $Servicio -ErrorAction SilentlyContinue) { Stop-Service $Servicio -Force }
-foreach ($d in $Destino, $Datos, $Logs, (Join-Path $Datos "mongo"), (Join-Path $Datos "ia-modelos")) { New-Item -ItemType Directory -Path $d -Force | Out-Null }
-
-# --- 4. Copiar la app y los componentes ---
-Write-Paso "Copiando la aplicación"
-$envGuardado = if (Test-Path $EnvFile) { Get-Content $EnvFile -Raw } else { $null }
-Sin-Parar { & robocopy.exe (Join-Path $PSScriptRoot "app") (Join-Path $Destino "app") /MIR /XF .env /NFL /NDL /NJH /NJS /NP | Out-Null }
-if ($LASTEXITCODE -ge 8) { Write-Host "ERROR: no se pudo copiar la aplicación (robocopy $LASTEXITCODE)." -ForegroundColor Red; Salir 1 }
-if ($envGuardado -and -not (Test-Path $EnvFile)) { [IO.File]::WriteAllText($EnvFile, $envGuardado) }
-
-Write-Paso "Instalando Node.js"
-$nodeZip = Get-ChildItem "componentes\node\node-v22*-win-x64.zip" | Select-Object -First 1
-if (-not $nodeZip) { Write-Host "ERROR: falta componentes\node\node-v22...-win-x64.zip" -ForegroundColor Red; Salir 1 }
-$tmp = Join-Path $env:TEMP "neurorepo-node"
-Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
-Expand-Archive $nodeZip.FullName -DestinationPath $tmp
-Remove-Item (Join-Path $Destino "node") -Recurse -Force -ErrorAction SilentlyContinue
-Move-Item (Get-ChildItem $tmp -Directory | Select-Object -First 1).FullName (Join-Path $Destino "node")
-Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
-$NodeExe = Join-Path $Destino "node\node.exe"
-
-# --- 5. MongoDB (servicio de Windows) ---
-Write-Paso "Instalando MongoDB"
-$p = Start-Process "componentes\mongodb\vc_redist.x64.exe" -ArgumentList "/install", "/quiet", "/norestart" -Wait -PassThru
-if ($p.ExitCode -notin 0, 1638, 3010) { Write-Host "AVISO: el runtime de Visual C++ terminó con el código $($p.ExitCode)." -ForegroundColor Yellow }
-New-Item -ItemType Directory -Path (Join-Path $Destino "mongodb") -Force | Out-Null
-Copy-Item "componentes\mongodb\mongod.exe" (Join-Path $Destino "mongodb\mongod.exe") -Force
-$mongoCfg = Join-Path $Destino "mongodb\mongod.cfg"
-@(
-    "# Generado por el instalador de NeuroRepo"
-    "storage:"
-    "  dbPath: '$(Join-Path $Datos 'mongo')'"
-    "  wiredTiger:"
-    "    engineConfig:"
-    "      cacheSizeGB: 0.5"
-    "systemLog:"
-    "  destination: file"
-    "  path: '$(Join-Path $Logs 'mongod.log')'"
-    "  logAppend: true"
-    "net:"
-    "  bindIp: 127.0.0.1"
-    "  port: 27017"
-) | Set-Content -Path $mongoCfg -Encoding ASCII
-if (-not (Get-Service $Servicio -ErrorAction SilentlyContinue)) {
-    New-Service -Name $Servicio -DisplayName "NeuroRepo - MongoDB" -StartupType Automatic `
-        -BinaryPathName "`"$(Join-Path $Destino 'mongodb\mongod.exe')`" --config `"$mongoCfg`" --service" | Out-Null
-}
-Start-Service $Servicio
-Write-Host "MongoDB en marcha (servicio $Servicio)."
-
-# --- Tareas programadas: arrancan con el equipo, sin límite de tiempo y una sola instancia ---
+# --- Utilidades: tareas programadas y espera de un servicio web ---
+# Tareas que arrancan con el equipo, sin límite de tiempo y con una sola instancia
 function Registrar-Tarea($nombre, $script, $usuario, $clave) {
     $accion = New-ScheduledTaskAction -Execute "cmd.exe" -Argument "/c `"$script`""
     $inicio = New-ScheduledTaskTrigger -AtStartup
@@ -208,26 +155,146 @@ function Esperar-Url($url, $segundos) {
     return $false
 }
 
-# --- 6. IA (opcional) ---
-Write-Paso "IA (Ollama)"
-$OllamaExe = $null
-$ollamaZip = Get-ChildItem "componentes\ollama\ollama-windows-amd64*.zip" -ErrorAction SilentlyContinue | Select-Object -First 1
-$ollamaSetup = Get-ChildItem "componentes\ollama\OllamaSetup*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-if ($ollamaZip) {
-    $dirIA = Join-Path $Destino "ollama"
-    Remove-Item $dirIA -Recurse -Force -ErrorAction SilentlyContinue
-    Expand-Archive $ollamaZip.FullName -DestinationPath $dirIA
-    $OllamaExe = Join-Path $dirIA "ollama.exe"
-} elseif ($ollamaSetup) {
-    $dirIA = Join-Path $Destino "ollama"
-    Start-Process $ollamaSetup.FullName -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/DIR=`"$dirIA`"" -Wait
-    # El instalador normal deja la bandeja del sistema arrancando con la sesión: aquí la IA la lleva la tarea
-    Get-Process "ollama app", ollama -ErrorAction SilentlyContinue | Stop-Process -Force
-    Get-ChildItem "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\Ollama*.lnk", "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup\Ollama*.lnk" -ErrorAction SilentlyContinue | Remove-Item -Force
-    $OllamaExe = Join-Path $dirIA "ollama.exe"
+function Mostrar($nombre, $instalado, $detalle) {
+    $marca = if ($instalado) { "[OK]" } else { "[--]" }
+    $color = if ($instalado) { "Green" } else { "Yellow" }
+    Write-Host ("  {0} {1,-22} {2}" -f $marca, $nombre, $detalle) -ForegroundColor $color
 }
 
-if ($OllamaExe -and (Test-Path $OllamaExe)) {
+# --- 3. Comprobación previa: qué hay ya instalado (lo que esté se omite) ---
+Write-Paso "Comprobando lo que ya está instalado"
+
+# Node.js: se omite si ya está la misma versión que trae el paquete
+$NodeExe = Join-Path $Destino "node\node.exe"
+$nodeZip = Get-ChildItem "componentes\node\node-v22*-win-x64.zip" -ErrorAction SilentlyContinue | Select-Object -First 1
+$nodeVersionPaquete = if ($nodeZip) { $nodeZip.Name -replace '^node-(v[\d.]+)-win-x64\.zip$', '$1' } else { $null }
+$nodeVersionActual = if (Test-Path $NodeExe) { "$(Sin-Parar { & $NodeExe --version 2>$null })".Trim() } else { "" }
+$instalarNode = (-not $nodeVersionActual) -or ($nodeVersionPaquete -and $nodeVersionActual -ne $nodeVersionPaquete)
+if ($instalarNode -and -not $nodeZip) { Write-Host "ERROR: falta componentes\node\node-v22...-win-x64.zip" -ForegroundColor Red; Salir 1 }
+Mostrar "Node.js" (-not $instalarNode) $(if ($instalarNode) { "se instalará $nodeVersionPaquete" } else { "$nodeVersionActual, se omite" })
+
+# Runtime de Visual C++ (lo necesita mongod.exe)
+$vcInstalado = $false
+foreach ($clave in "HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64", "HKLM:\SOFTWARE\WOW6432Node\Microsoft\VisualStudio\14.0\VC\Runtimes\x64") {
+    if ((Get-ItemProperty $clave -ErrorAction SilentlyContinue).Installed -eq 1) { $vcInstalado = $true }
+}
+Mostrar "Visual C++ runtime" $vcInstalado $(if ($vcInstalado) { "se omite" } else { "se instalará" })
+
+# MongoDB: se omite la copia si el servicio ya existe con el mismo mongod.exe
+$MongoExe = Join-Path $Destino "mongodb\mongod.exe"
+$mongoPaquete = Join-Path $PSScriptRoot "componentes\mongodb\mongod.exe"
+$servicioMongo = Get-Service $Servicio -ErrorAction SilentlyContinue
+$copiarMongo = -not (Test-Path $MongoExe)
+if (-not $copiarMongo -and (Test-Path $mongoPaquete)) { $copiarMongo = (Get-FileHash $MongoExe).Hash -ne (Get-FileHash $mongoPaquete).Hash }
+if ($copiarMongo -and -not (Test-Path $mongoPaquete)) { Write-Host "ERROR: falta componentes\mongodb\mongod.exe" -ForegroundColor Red; Salir 1 }
+$mongoListo = $servicioMongo -and -not $copiarMongo
+Mostrar "MongoDB" $mongoListo $(if ($mongoListo) { "servicio $Servicio ($($servicioMongo.Status)), se omite" } elseif ($servicioMongo) { "se actualizará mongod.exe" } else { "se instalará como servicio" })
+
+# IA (Ollama): la de NeuroRepo, una ya instalada en el sistema o una que ya esté funcionando.
+# Si hay alguna, no se instala nada y se pasa directamente al modelo.
+$OllamaPropio = Join-Path $Destino "ollama\ollama.exe"
+$OllamaSistema = @(
+    (Get-Command ollama.exe -ErrorAction SilentlyContinue).Source
+    (Join-Path $env:LOCALAPPDATA "Programs\Ollama\ollama.exe")
+    (Join-Path $env:ProgramFiles "Ollama\ollama.exe")
+    $(try { Join-Path ((Get-CimInstance Win32_UserProfile | Where-Object { $_.SID -eq (New-Object Security.Principal.NTAccount($UsuarioOriginal)).Translate([Security.Principal.SecurityIdentifier]).Value }).LocalPath) "AppData\Local\Programs\Ollama\ollama.exe" } catch { $null })
+) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
+$ollamaFuncionando = Esperar-Url "http://127.0.0.1:11434/api/version" 2
+$ollamaZip = Get-ChildItem "componentes\ollama\ollama-windows-amd64*.zip" -ErrorAction SilentlyContinue | Select-Object -First 1
+$ollamaSetup = Get-ChildItem "componentes\ollama\OllamaSetup*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+if (Test-Path $OllamaPropio) { $modoIA = "propio"; $OllamaExe = $OllamaPropio; $textoIA = "la de NeuroRepo ($OllamaPropio), se omite" }
+elseif ($ollamaFuncionando) { $modoIA = "externo"; $OllamaExe = $OllamaSistema; $textoIA = "ya hay una funcionando en el puerto 11434, se usa esa" }
+elseif ($OllamaSistema) { $modoIA = "sistema"; $OllamaExe = $OllamaSistema; $textoIA = "instalada en $OllamaSistema, se usa esa" }
+elseif ($ollamaZip -or $ollamaSetup) { $modoIA = "instalar"; $OllamaExe = $null; $textoIA = "se instalará desde componentes\ollama" }
+else { $modoIA = "ninguna"; $OllamaExe = $null; $textoIA = "no hay; solo modo de búsqueda simple" }
+Mostrar "IA (Ollama)" ($modoIA -in "propio", "externo", "sistema") $textoIA
+
+$appInstalada = Test-Path (Join-Path $Destino "app\server\src\index.js")
+Mostrar "Aplicación" $appInstalada $(if ($appInstalada) { "se actualizará (solo los archivos que cambien)" } else { "se instalará" })
+
+# --- 4. Parar solo lo que se va a cambiar ---
+Write-Paso "Preparando $Destino"
+Sin-Parar { Stop-ScheduledTask -TaskName $TareaApp -ErrorAction SilentlyContinue }
+Get-Process node -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($Destino, [StringComparison]::OrdinalIgnoreCase) } | Stop-Process -Force
+foreach ($d in $Destino, $Datos, $Logs, (Join-Path $Datos "mongo"), (Join-Path $Datos "ia-modelos")) { New-Item -ItemType Directory -Path $d -Force | Out-Null }
+
+# --- 5. App y Node.js ---
+Write-Paso "Copiando la aplicación"
+$envGuardado = if (Test-Path $EnvFile) { Get-Content $EnvFile -Raw } else { $null }
+Sin-Parar { & robocopy.exe (Join-Path $PSScriptRoot "app") (Join-Path $Destino "app") /MIR /XF .env /NFL /NDL /NJH /NJS /NP | Out-Null }
+if ($LASTEXITCODE -ge 8) { Write-Host "ERROR: no se pudo copiar la aplicación (robocopy $LASTEXITCODE)." -ForegroundColor Red; Salir 1 }
+if ($envGuardado -and -not (Test-Path $EnvFile)) { [IO.File]::WriteAllText($EnvFile, $envGuardado) }
+
+if ($instalarNode) {
+    Write-Paso "Instalando Node.js $nodeVersionPaquete"
+    $tmp = Join-Path $env:TEMP "neurorepo-node"
+    Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
+    Expand-Archive $nodeZip.FullName -DestinationPath $tmp
+    Remove-Item (Join-Path $Destino "node") -Recurse -Force -ErrorAction SilentlyContinue
+    Move-Item (Get-ChildItem $tmp -Directory | Select-Object -First 1).FullName (Join-Path $Destino "node")
+    Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+# --- 6. MongoDB (servicio de Windows) ---
+Write-Paso "MongoDB"
+if (-not $vcInstalado) {
+    Write-Host "Instalando el runtime de Visual C++..."
+    $p = Start-Process "componentes\mongodb\vc_redist.x64.exe" -ArgumentList "/install", "/quiet", "/norestart" -Wait -PassThru
+    if ($p.ExitCode -notin 0, 1638, 3010) { Write-Host "AVISO: el runtime de Visual C++ terminó con el código $($p.ExitCode)." -ForegroundColor Yellow }
+}
+New-Item -ItemType Directory -Path (Join-Path $Destino "mongodb") -Force | Out-Null
+if ($copiarMongo) {
+    if ($servicioMongo) { Stop-Service $Servicio -Force }
+    Copy-Item $mongoPaquete $MongoExe -Force
+}
+$mongoCfg = Join-Path $Destino "mongodb\mongod.cfg"
+$cfgNueva = @(
+    "# Generado por el instalador de NeuroRepo"
+    "storage:"
+    "  dbPath: '$(Join-Path $Datos 'mongo')'"
+    "  wiredTiger:"
+    "    engineConfig:"
+    "      cacheSizeGB: 0.5"
+    "systemLog:"
+    "  destination: file"
+    "  path: '$(Join-Path $Logs 'mongod.log')'"
+    "  logAppend: true"
+    "net:"
+    "  bindIp: 127.0.0.1"
+    "  port: 27017"
+) -join "`r`n"
+$cfgCambiada = -not (Test-Path $mongoCfg) -or ((Get-Content $mongoCfg -Raw).Trim() -ne $cfgNueva.Trim())
+if ($cfgCambiada) { Set-Content -Path $mongoCfg -Value $cfgNueva -Encoding ASCII }
+if (-not $servicioMongo) {
+    New-Service -Name $Servicio -DisplayName "NeuroRepo - MongoDB" -StartupType Automatic `
+        -BinaryPathName "`"$MongoExe`" --config `"$mongoCfg`" --service" | Out-Null
+} elseif ($cfgCambiada -and -not $copiarMongo) {
+    Restart-Service $Servicio -Force
+}
+if ((Get-Service $Servicio).Status -ne "Running") { Start-Service $Servicio }
+Write-Host "MongoDB en marcha (servicio $Servicio)."
+
+# --- 7. IA (Ollama) ---
+Write-Paso "IA (Ollama)"
+if ($modoIA -eq "instalar") {
+    $dirIA = Join-Path $Destino "ollama"
+    if ($ollamaZip) {
+        Write-Host "Descomprimiendo $($ollamaZip.Name) (puede tardar unos minutos)..."
+        Remove-Item $dirIA -Recurse -Force -ErrorAction SilentlyContinue
+        Expand-Archive $ollamaZip.FullName -DestinationPath $dirIA
+    } else {
+        Start-Process $ollamaSetup.FullName -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/DIR=`"$dirIA`"" -Wait
+        # El instalador normal deja la bandeja del sistema arrancando con la sesión: aquí la IA la lleva la tarea
+        Get-Process "ollama app", ollama -ErrorAction SilentlyContinue | Stop-Process -Force
+        Get-ChildItem "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup\Ollama*.lnk", "$env:ProgramData\Microsoft\Windows\Start Menu\Programs\Startup\Ollama*.lnk" -ErrorAction SilentlyContinue | Remove-Item -Force
+    }
+    $OllamaExe = $OllamaPropio
+    if (-not (Test-Path $OllamaExe)) { Write-Host "AVISO: no se encontró ollama.exe tras instalarlo; sigue sin IA." -ForegroundColor Yellow; $modoIA = "ninguna" }
+}
+
+# Con una IA propia o del sistema, NeuroRepo la arranca con el equipo (tarea). Con una que ya estaba
+# funcionando por su cuenta (modo "externo"), se usa tal cual y no se crea ninguna tarea.
+if ($modoIA -in "propio", "sistema", "instalar") {
     $iniciarIA = Join-Path $Destino "iniciar-ia.cmd"
     @(
         "@echo off"
@@ -240,48 +307,50 @@ if ($OllamaExe -and (Test-Path $OllamaExe)) {
         "timeout /t 10 /nobreak >nul"
         "goto inicio"
     ) | Set-Content -Path $iniciarIA -Encoding ASCII
-    Registrar-Tarea $TareaIA $iniciarIA $null $null
-    Start-ScheduledTask -TaskName $TareaIA
+    if (-not (Get-ScheduledTask -TaskName $TareaIA -ErrorAction SilentlyContinue) -or $modoIA -eq "instalar") {
+        Registrar-Tarea $TareaIA $iniciarIA $null $null
+    }
+    if (-not $ollamaFuncionando) { Start-ScheduledTask -TaskName $TareaIA }
+}
+
+# El modelo: se omite si ya está cargado; si no, se carga desde componentes\modelo (.gguf o sus partes)
+if ($modoIA -ne "ninguna") {
     if (-not (Esperar-Url "http://127.0.0.1:11434/api/version" 90)) {
         Write-Host "AVISO: la IA no responde todavía; revisa $(Join-Path $Logs 'ia.log')." -ForegroundColor Yellow
     } else {
         $tags = (Invoke-WebRequest "http://127.0.0.1:11434/api/tags" -UseBasicParsing).Content
         if ($tags -match [regex]::Escape("`"$Modelo`"")) {
-            Write-Host "El modelo $Modelo ya estaba cargado."
+            Write-Host "El modelo $Modelo ya está cargado, se omite." -ForegroundColor Green
+        } elseif (-not $OllamaExe) {
+            Write-Host "AVISO: hay una IA funcionando pero no encuentro ollama.exe para cargarle el modelo $Modelo." -ForegroundColor Yellow
         } else {
-            # El modelo: un .gguf o sus partes (.parte0, .parte1...). Se copia/une siempre en la carpeta de
-            # datos (ruta sin espacios para la línea FROM) y se borra al terminar: Ollama guarda su copia.
+            # Se copia/une siempre en la carpeta de datos (ruta sin espacios para la línea FROM) y se borra
+            # al terminar: Ollama guarda su propia copia.
             $origen = @(Get-ChildItem "componentes\modelo\*.gguf" -ErrorAction SilentlyContinue | Select-Object -First 1)
             if (-not $origen.Count) { $origen = @(Get-ChildItem "componentes\modelo\*.parte*" -ErrorAction SilentlyContinue | Sort-Object { [int]($_.Name -replace '^.*\.parte', '') }) }
-            $gguf = $null
-            $temporal = $null
             if ($origen.Count) {
                 Write-Host "Preparando el modelo ($($origen.Count) archivo(s))..."
                 $temporal = Join-Path $Datos "modelo-temporal.gguf"
                 $salida = [IO.File]::Create($temporal)
                 try { foreach ($pt in $origen) { $entrada = [IO.File]::OpenRead($pt.FullName); try { $entrada.CopyTo($salida) } finally { $entrada.Close() } } }
                 finally { $salida.Close() }
-                $gguf = Get-Item $temporal
-            }
-            if ($gguf) {
                 Write-Host "Cargando el modelo $Modelo (puede tardar un minuto)..."
                 $modelfile = Join-Path $Datos "Modelfile"
-                "FROM $($gguf.FullName)" | Set-Content -Path $modelfile -Encoding ASCII
+                "FROM $temporal" | Set-Content -Path $modelfile -Encoding ASCII
                 $env:OLLAMA_HOST = "127.0.0.1:11434"
                 Sin-Parar { & $OllamaExe create $Modelo -f $modelfile 2>&1 | Out-Null }
                 if ($LASTEXITCODE -eq 0) { Write-Host "Modelo cargado." } else { Write-Host "AVISO: no se pudo cargar el modelo (código $LASTEXITCODE)." -ForegroundColor Yellow }
-                Remove-Item $modelfile -ErrorAction SilentlyContinue
-                if ($temporal) { Remove-Item $temporal -ErrorAction SilentlyContinue }
+                Remove-Item $modelfile, $temporal -ErrorAction SilentlyContinue
             } else {
                 Write-Host "AVISO: no hay modelo en componentes\modelo: el modo avanzado no funcionará hasta cargarlo." -ForegroundColor Yellow
             }
         }
     }
 } else {
-    Write-Host "Sin Ollama en componentes\ollama: NeuroRepo funcionará solo en modo de búsqueda simple." -ForegroundColor Yellow
+    Write-Host "Sin Ollama: NeuroRepo funcionará solo en modo de búsqueda simple." -ForegroundColor Yellow
 }
 
-# --- 7. App ---
+# --- 8. App ---
 Write-Paso "Configurando la aplicación"
 if ($reconfigurar) {
     $lineas = @(
@@ -335,7 +404,7 @@ if ($reconfigurar -or -not $tareaAppExiste) {
     }
 }
 
-# --- 8. Firewall y arranque ---
+# --- 9. Firewall y arranque ---
 Write-Paso "Abriendo el puerto 4000 en el Firewall de Windows"
 if (-not (Get-NetFirewallRule -DisplayName "NeuroRepo" -ErrorAction SilentlyContinue)) {
     New-NetFirewallRule -DisplayName "NeuroRepo" -Direction Inbound -Protocol TCP -LocalPort 4000 -Action Allow | Out-Null
