@@ -6,4 +6,5 @@
 !server/node_modules
 !server/src
 !client/dist
+!vendor/ocr-apk
 **/.env

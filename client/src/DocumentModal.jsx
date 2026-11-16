@@ -1,4 +1,5 @@
 import { useCallback, useContext, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { api } from "./api";
 import { badgeFor, formatSize, formatDate, IMAGE_EXT, TEXT_EXT, VIDEO_EXT, AUDIO_EXT, OFFICE_EXT } from "./DocumentCard";
 import { XIcon, DownloadIcon, HistoryIcon, RestoreIcon } from "./icons";
@@ -115,7 +116,9 @@ export default function DocumentModal({ doc, onClose }) {
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  return (
+  // Portal a <body>: abierto desde una tarjeta del chat, el modal quedaba dentro del mensaje, que tiene
+  // animación (transform) y scroll propio y podía recortarlo o descolocarlo.
+  return createPortal(
     <div className="overlay" role="dialog" aria-modal="true" aria-labelledby="viewT" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="dialog wide">
         <div className="dlg-head" style={{ alignItems: "center" }}>
@@ -169,5 +172,5 @@ export default function DocumentModal({ doc, onClose }) {
         )}
       </div>
     </div>
-  );
+  , document.body);
 }

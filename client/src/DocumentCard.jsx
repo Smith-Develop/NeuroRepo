@@ -52,9 +52,14 @@ export default function DocumentCard({ doc, score, maxScore, cite }) {
 
   return (
     <div className="res">
-      <span className={`ftype ${cls}`}>{label}</span>
+      {canPreview
+        ? <button type="button" className={`ftype ${cls}`} onClick={() => setOpen(true)} title={`Abrir ${doc.filename}`} aria-label={`Abrir ${doc.filename}`}>{label}</button>
+        : <span className={`ftype ${cls}`}>{label}</span>}
       <div className="info">
-        <div className="t" title={doc.filename}>{cite && <span className="cite">{cite}</span>}{doc.filename}</div>
+        <div className="t" title={doc.filename}>
+          {cite && <span className="cite">{cite}</span>}
+          {canPreview ? <button type="button" className="t-link" onClick={() => setOpen(true)}>{doc.filename}</button> : doc.filename}
+        </div>
         <div className="path">
           <FolderIcon size={11} />
           {pathParts.map((p, i) => (

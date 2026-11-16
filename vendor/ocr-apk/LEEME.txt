@@ -1,0 +1,4 @@
+Paquetes de Alpine para el OCR (tesseract-ocr, tesseract-ocr-data-spa, poppler-utils y sus dependencias)
+que Dockerfile.offline instala SIN internet. No van en git (son binarios): vienen dentro del paquete
+offline (zip). Son para la Alpine de la imagen node:22-alpine (3.24); si esa imagen cambia de versión
+y no encajan, Dockerfile.offline intenta instalarlos desde internet.

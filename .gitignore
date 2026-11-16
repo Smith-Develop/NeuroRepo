@@ -3,3 +3,6 @@ node_modules
 dist
 scripts/data/
 documentos-prueba/
+
+# Paquetes .apk del OCR para el paquete offline (van en el zip, no en git)
+vendor/ocr-apk/*.apk

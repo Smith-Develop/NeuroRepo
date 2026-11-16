@@ -579,3 +579,9 @@ button.ft-pick.on { color: var(--text); background: var(--accent-soft); }
   .composer .bar .scope { min-width: 0; }
   .composer .bar .scope span { max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 }
+
+/* Tarjeta del chat: el nombre y el icono del archivo abren la vista previa */
+.res button.ftype { cursor: pointer; border: 0; padding: 0; }
+.res .t-link { all: unset; cursor: pointer; }
+.res .t-link:hover { color: var(--accent-text); text-decoration: underline; }
+.res .t-link:focus-visible, .res button.ftype:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; border-radius: 4px; }

@@ -2,9 +2,14 @@
 # Usa server/node_modules y client/dist que ya vienen en el paquete offline (zip), y solo necesita
 # la imagen node:22-alpine ya descargada. Uso: ver docker-compose.offline.yml.
 FROM node:22-alpine
-# OCR opcional: si no hay acceso a dl-cdn.alpinelinux.org, la app arranca igual con el OCR desactivado.
-RUN apk add --no-cache tesseract-ocr tesseract-ocr-data-spa poppler-utils \
-  || echo "AVISO: no se pudo instalar tesseract/poppler (sin acceso a internet); el OCR quedará desactivado."
+# OCR (tesseract en español + pdftoppm): primero desde los paquetes .apk incluidos en el paquete
+# offline (vendor/ocr-apk, sin red; son para la Alpine de node:22-alpine, 3.24); si no están o no
+# encajan, desde internet; y si tampoco, la app arranca igual con el OCR desactivado.
+COPY vendor/ocr-apk /tmp/ocr-apk
+RUN { ls /tmp/ocr-apk/*.apk >/dev/null 2>&1 && apk add --no-cache --no-network /tmp/ocr-apk/*.apk; } \
+  || apk add --no-cache tesseract-ocr tesseract-ocr-data-spa poppler-utils \
+  || echo "AVISO: no se pudo instalar tesseract/poppler; el OCR quedará desactivado."; \
+  rm -rf /tmp/ocr-apk
 WORKDIR /app/server
 COPY server/package*.json ./
 COPY server/node_modules ./node_modules

@@ -166,7 +166,8 @@ Nada depende de APIs de pago.
   `VIDEO_EXT`, `AUDIO_EXT`, `OFFICE_EXT`, `PREVIEWABLE` = pdf/imagen/texto/Word/Excel) e `iconFor`/`formatSize`. El nombre del
   archivo es clickable (abre `DocumentModal`) si es `PREVIEWABLE`; vídeo y audio se reproducen **en la
   propia tarjeta** (`<video>`/`<audio controls>`, sin modal) tal como pidió el cliente ("se puedan
-  reproducir desde el chat").
+  reproducir desde el chat"). En el chat el nombre y el icono del archivo abren la vista previa (igual
+  que en «Documentos»), además del botón «Abrir».
 - `client/src/chatHistory.js` – historial en `localStorage` (`neurorepo.chat.<userId>`, como mucho 40
   conversaciones `{id, title, scope, messages, updatedAt}`), con evento propio para que `Sidebar.jsx`
   (sección «Historial», borrar con la ×) se actualice. Todo en try/catch: sin almacenamiento, el chat
@@ -174,7 +175,8 @@ Nada depende de APIs de pago.
 - `client/src/Favorites.jsx` – vista «Favoritos»: los favoritos viven en `App.jsx` (cargados de
   `/favorites`) y se comparten por `AppContext {favorites, favoriteIds, toggleFavorite}`; la estrella de
   `DocumentCard` los cambia con actualización optimista.
-- `client/src/DocumentModal.jsx` – modal de vista previa (pdf en `<iframe>`; Word/Excel con el HTML de
+- `client/src/DocumentModal.jsx` – se pinta con `createPortal` en `<body>`: desde una tarjeta del chat
+  quedaba dentro del mensaje (animación con `transform` y scroll propio). Modal de vista previa (pdf en `<iframe>`; Word/Excel con el HTML de
   `/preview` en un `<iframe sandbox="" srcDoc>` con CSP `default-src 'none'` — el HTML sale del propio
   documento, así que nunca se pinta en la página de la app —, con pestañas por hoja; imagen en `<img>`, texto
   leído aparte con `fetch` y mostrado en un `<pre>` con los colores del tema activo — así no se ve la página
@@ -293,7 +295,13 @@ falta).
   un zip del repo con `server/node_modules` y `client/dist` ya incluidos. Si están, el instalador
   añade `docker-compose.offline.yml`, que construye con `Dockerfile.offline` (sin npm ni Vite; OCR
   opcional si `apk` no llega; su propio `Dockerfile.offline.dockerignore`, que solo usa BuildKit) y
-  deja que `model` termine con éxito aunque no pueda bajar el modelo. Necesita las imágenes
+  deja que `model` termine con éxito aunque no pueda bajar el modelo. **OCR sin red**: el zip trae en
+  `vendor/ocr-apk/` los 48 `.apk` (26 MB) de tesseract-ocr + tesseract-ocr-data-spa + poppler-utils que
+  faltan en `node:22-alpine` (Alpine 3.24), bajados con `apk fetch` de lo que pide
+  `apk add --simulate`; `Dockerfile.offline` los instala con `apk add --no-network` (firmados, sin
+  `--allow-untrusted`), si no, desde internet, y si no, sin OCR. Los `.apk` no van en git
+  (`.gitignore`), solo la carpeta con su `LEEME.txt`. Probado con `docker build --network=none`. Si la
+  imagen base cambia de versión de Alpine, hay que volver a bajarlos. Necesita las imágenes
   `node:22-alpine`, `mongo:7` y `ollama/ollama` ya descargadas.
 - **Carpeta de red** (`G:\...` o `\\servidor\recurso\...`): Docker Desktop corre en una VM que no ve
   las unidades de red con letra, así que un bind mount de `G:\` sale **vacío**. El instalador obtiene la
