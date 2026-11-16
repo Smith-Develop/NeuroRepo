@@ -1,0 +1,39 @@
+NEUROREPO PARA WINDOWS, SIN DOCKER (y sin internet)
+====================================================
+
+Para máquinas donde Docker no puede funcionar (por ejemplo, una máquina virtual sin "virtualización
+anidada"). Instala todo directamente en Windows:
+  - MongoDB como servicio de Windows ("NeuroRepoMongo").
+  - La app y la IA como tareas programadas que arrancan con el equipo, sin iniciar sesión, y se
+    reinician solas si se caen.
+
+ANTES DE EMPEZAR (opcional, para el modo avanzado con IA)
+  componentes\ollama\  ->  ollama-windows-amd64.zip  (o OllamaSetup.exe), de ollama.com
+  componentes\modelo\  ->  qwen2.5-1.5b-instruct-q4_k_m.gguf  o sus partes modelo.gguf.parte0, .parte1...
+  Sin esto, NeuroRepo funciona igual en modo de búsqueda simple.
+
+INSTALAR
+  1. Copia esta carpeta al equipo y haz doble clic en Instalar-NeuroRepo.bat (pide administrador).
+  2. Responde: carpeta de instalación (C:\NeuroRepo), nombre/DNI/contraseña del administrador de la
+     app, carpeta de documentos y cada cuánto se reindexa.
+     - Si la carpeta de documentos es de red (G:\... o \\servidor\...), pedirá un usuario de Windows
+       con acceso a ella y su contraseña: la app arranca sin sesión iniciada y entra con ese usuario.
+       Windows guarda esa contraseña en la tarea programada. Si cambia, vuelve a ejecutar el
+       instalador y elige reconfigurar.
+  3. Al terminar muestra la dirección para los compañeros: http://<IP-del-equipo>:4000
+
+ACTUALIZAR
+  Ejecuta de nuevo Instalar-NeuroRepo.bat desde la carpeta nueva y contesta N a "¿Volver a
+  configurarlo?": se cambia la app y se conservan los datos y la configuración.
+
+DÓNDE ESTÁ CADA COSA (en C:\NeuroRepo)
+  app\                     la aplicación (configuración en app\server\.env)
+  datos\mongo              la base de datos (índice, usuarios, grupos, favoritos)
+  datos\ia-modelos         el modelo de IA
+  logs\                    app.log, ia.log, mongod.log
+  Restablecer-admin.bat    para recuperar la contraseña del administrador
+
+LIMITACIONES
+  - El OCR (leer escaneos e imágenes) no viene incluido en esta versión para Windows: se indexa el
+    texto de PDF, Word, Excel, etc., pero no el de los escaneos.
+  - Es para equipos x64 (Intel/AMD).

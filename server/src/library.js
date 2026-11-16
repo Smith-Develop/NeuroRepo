@@ -6,7 +6,9 @@ import { AppConfig } from "./models.js";
 // Carpeta montada en Docker (de lectura/escritura) desde el host: la base dentro de la cual se puede
 // elegir cualquier subcarpeta como biblioteca activa, crear/renombrar/borrar carpetas y subir archivos,
 // todo sin volver a tocar Docker.
-export const LIBRARY_ROOT = process.env.LIBRARY_ROOT || "/app/library";
+// Normalizada (absoluta y sin barra final): en Windows puede llegar como G:\Docs\ o \\servidor\recurso, y
+// safeResolve compara prefijos con path.sep.
+export const LIBRARY_ROOT = path.resolve(process.env.LIBRARY_ROOT || "/app/library");
 
 export class LibraryPathError extends Error {}
 

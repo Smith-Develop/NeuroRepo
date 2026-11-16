@@ -1,0 +1,4 @@
+Pon aqui la IA (Ollama para Windows), descargada en un PC con internet desde ollama.com:
+  ollama-windows-amd64.zip   (recomendado: version para servidor, sin bandeja del sistema)
+  o bien OllamaSetup.exe
+Sin Ollama, NeuroRepo funciona igual pero solo en modo de busqueda simple.

@@ -11,3 +11,10 @@ vendor/ocr-apk/*.apk
 pre-instalacion/instaladores/**/*.exe
 pre-instalacion/instaladores/**/*.parte*
 pre-instalacion/instaladores/**/*.msi
+
+# Componentes del instalador nativo para Windows (van en el zip, no en git)
+windows-nativo/componentes/**/*.zip
+windows-nativo/componentes/**/*.exe
+windows-nativo/componentes/**/*.gguf
+windows-nativo/componentes/**/*.parte*
+windows-nativo/app/

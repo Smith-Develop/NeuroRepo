@@ -342,7 +342,18 @@ falta).
   `docker-desktop-<arq>.exe install --quiet --accept-license --backend=wsl-2`, añade el usuario a
   `docker-users` y ofrece reiniciar. Los binarios no van en git. En PowerShell 5.1 los ejecutables
   externos se llaman con `Sin-Parar` (con `Stop`, redirigir su stderr lanza excepción).
-- `instalar.ps1`, `cargar-modelo.ps1` y `preinstalar.ps1` van en UTF-8 **con BOM**: Windows PowerShell 5.1 lee sin BOM como ANSI (tildes rotas,
+- **Windows sin Docker** (`windows-nativo/`, se entrega como «NeuroRepo-Windows»): para VMs sin
+  virtualización anidada (Docker Desktop no arranca). `Instalar-NeuroRepo.bat` → `instalar-windows.ps1`
+  copia `app\` (server con `node_modules` + `client\dist`) a `C:\NeuroRepo`, Node 22 portable,
+  `mongod.exe` como servicio `NeuroRepoMongo` (`New-Service … --config mongod.cfg --service`, solo
+  127.0.0.1, caché 0,5 GB) y la app e IA (Ollama: `ollama-windows-amd64.zip` u `OllamaSetup.exe` que
+  aporta el usuario, porque se descarga de GitHub) como tareas programadas al arrancar
+  (`iniciar-*.cmd` con bucle de reinicio, `ExecutionTimeLimit` 0). Con biblioteca de red usa la ruta UNC
+  y la tarea de la app corre con un usuario con acceso (contraseña guardada por Windows en la tarea);
+  si no, como SYSTEM. El `.env` se escribe sin BOM y con valores entre comillas simples (Node lo lee
+  literal). Sin OCR en esta variante. `LIBRARY_ROOT` se normaliza con `path.resolve` (en Windows llega
+  con barra final o como `\\servidor\recurso`). Solo x64. Los binarios no van en git.
+- `instalar.ps1`, `cargar-modelo.ps1`, `preinstalar.ps1` e `instalar-windows.ps1` van en UTF-8 **con BOM**: Windows PowerShell 5.1 lee sin BOM como ANSI (tildes rotas,
   y algunos bytes UTF-8 pasan por comillas tipográficas).
 - No sustituye a Docker Compose ni cambia nada de la arquitectura: es solo una capa de conveniencia
   sobre el mismo `docker-compose.yml`/`docker-compose.local.yml` que ya se usa en local y en Coolify.
