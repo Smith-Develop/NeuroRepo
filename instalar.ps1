@@ -263,7 +263,14 @@ if (-not (Get-NetFirewallRule -DisplayName "NeuroRepo" -ErrorAction SilentlyCont
 Write-Paso "Construyendo y arrancando NeuroRepo (la primera vez puede tardar varios minutos: descarga el modelo de IA, ~2 GB)..."
 Push-Location $RepoRoot
 try {
-    docker compose -f docker-compose.yml -f docker-compose.local.yml up -d --build
+    $composeFiles = @("-f", "docker-compose.yml", "-f", "docker-compose.local.yml")
+    # Paquete offline (zip con server/node_modules y client/dist ya incluidos): construye sin npm ni
+    # compilar la interfaz, para equipos sin internet o con el DNS capado (ver Dockerfile.offline).
+    if ((Test-Path "server\node_modules") -and (Test-Path "client\dist\index.html") -and (Test-Path "docker-compose.offline.yml")) {
+        Write-Host "Paquete offline detectado: se usan las dependencias incluidas, sin descargar nada de npm."
+        $composeFiles += @("-f", "docker-compose.offline.yml")
+    }
+    docker compose @composeFiles up -d --build
     $composeOk = ($LASTEXITCODE -eq 0)
 } finally {
     Pop-Location

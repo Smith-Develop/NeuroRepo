@@ -1,0 +1,15 @@
+# Construcción SIN internet (redes con DNS capado): no ejecuta npm ni compila la interfaz.
+# Usa server/node_modules y client/dist que ya vienen en el paquete offline (zip), y solo necesita
+# la imagen node:22-alpine ya descargada. Uso: ver docker-compose.offline.yml.
+FROM node:22-alpine
+# OCR opcional: si no hay acceso a dl-cdn.alpinelinux.org, la app arranca igual con el OCR desactivado.
+RUN apk add --no-cache tesseract-ocr tesseract-ocr-data-spa poppler-utils \
+  || echo "AVISO: no se pudo instalar tesseract/poppler (sin acceso a internet); el OCR quedará desactivado."
+WORKDIR /app/server
+COPY server/package*.json ./
+COPY server/node_modules ./node_modules
+COPY server/src ./src
+COPY client/dist /app/client/dist
+ENV NODE_ENV=production
+EXPOSE 4000
+CMD ["node", "src/index.js"]

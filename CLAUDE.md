@@ -261,6 +261,12 @@ falta).
   en la red local, y al final levanta el stack con `docker compose -f docker-compose.yml -f
   docker-compose.local.yml up -d --build` y muestra la IP de la máquina para pasarle la URL a los
   compañeros (`http://<ip-lan>:4000`).
+- **Paquete offline** (redes sin internet o con el DNS capado, donde fallan `apk add`/`npm ci`):
+  un zip del repo con `server/node_modules` y `client/dist` ya incluidos. Si están, el instalador
+  añade `docker-compose.offline.yml`, que construye con `Dockerfile.offline` (sin npm ni Vite; OCR
+  opcional si `apk` no llega; su propio `Dockerfile.offline.dockerignore`, que solo usa BuildKit) y
+  deja que `model` termine con éxito aunque no pueda bajar el modelo. Necesita las imágenes
+  `node:22-alpine`, `mongo:7` y `ollama/ollama` ya descargadas.
 - No sustituye a Docker Compose ni cambia nada de la arquitectura: es solo una capa de conveniencia
   sobre el mismo `docker-compose.yml`/`docker-compose.local.yml` que ya se usa en local y en Coolify.
 

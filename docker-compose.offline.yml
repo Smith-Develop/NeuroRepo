@@ -1,0 +1,15 @@
+# Arranque en un equipo sin internet (o con el DNS capado), a partir del paquete offline (zip, que
+# ya trae server/node_modules y client/dist). Necesita las imágenes node:22-alpine, mongo:7 y
+# ollama/ollama ya descargadas (docker pull o docker load). Uso:
+#   docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.offline.yml up -d --build
+services:
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile.offline
+
+  # Sin acceso a registry.ollama.ai el modelo no se puede descargar: lo intenta un par de veces y
+  # termina igualmente con éxito, para que "app" arranque. La búsqueda funciona sin IA (la IA solo
+  # es el respaldo que reformula la pregunta).
+  model:
+    entrypoint: ["sh", "-c", "for i in 1 2 3 4 5; do ollama pull \"$$OLLAMA_MODEL\" && exit 0; sleep 3; done; echo 'AVISO: no se pudo descargar el modelo; la app funciona sin IA.'; exit 0"]

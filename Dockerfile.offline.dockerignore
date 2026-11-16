@@ -1,0 +1,9 @@
+# Solo para Dockerfile.offline (BuildKit usa este archivo en lugar de .dockerignore):
+# a diferencia de la construcción normal, aquí SÍ se copian server/node_modules y client/dist.
+*
+!server/package.json
+!server/package-lock.json
+!server/node_modules
+!server/src
+!client/dist
+**/.env
