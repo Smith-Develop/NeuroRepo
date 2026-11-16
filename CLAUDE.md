@@ -267,6 +267,15 @@ falta).
   opcional si `apk` no llega; su propio `Dockerfile.offline.dockerignore`, que solo usa BuildKit) y
   deja que `model` termine con éxito aunque no pueda bajar el modelo. Necesita las imágenes
   `node:22-alpine`, `mongo:7` y `ollama/ollama` ya descargadas.
+- **Carpeta de red** (`G:\...` o `\\servidor\recurso\...`): Docker Desktop corre en una VM que no ve
+  las unidades de red con letra, así que un bind mount de `G:\` sale **vacío**. El instalador obtiene la
+  ruta UNC (`Get-PSDrive`/`HKCU:\Network\<letra>`, porque elevado no ve las unidades de la sesión
+  normal), la IP del servidor y el usuario/contraseña de red, y escribe `DOCS_SMB_DEVICE`/`DOCS_SMB_OPTS`
+  en `.env`; con eso añade `docker-compose.red.yml` (volumen CIFS `neurorepo-documentos-red` en el mismo
+  destino `/app/library`, que sustituye al bind mount) y recrea el volumen en cada arranque. La
+  contraseña de red queda en `.env`: si cambia, hay que reconfigurar.
+- `instalar.ps1` va en UTF-8 **con BOM**: Windows PowerShell 5.1 lee sin BOM como ANSI (tildes rotas,
+  y algunos bytes UTF-8 pasan por comillas tipográficas).
 - No sustituye a Docker Compose ni cambia nada de la arquitectura: es solo una capa de conveniencia
   sobre el mismo `docker-compose.yml`/`docker-compose.local.yml` que ya se usa en local y en Coolify.
 

@@ -1,0 +1,23 @@
+# Biblioteca en una carpeta compartida de red (p. ej. la unidad G: de Windows = \\servidor\recurso).
+# Docker Desktop corre en una máquina virtual que NO ve las unidades de red con letra (un bind mount de
+# G:\... sale vacío), así que aquí Docker monta el recurso SMB directamente (CIFS) con el usuario de red.
+# El instalador rellena estas variables en .env (ver Configurar-CarpetaRed en instalar.ps1):
+#   DOCS_SMB_DEVICE  //servidor/recurso/subcarpeta   (barras normales)
+#   DOCS_SMB_OPTS    addr=<IP del servidor>,username=...,password=...,domain=...,vers=3.0,...
+# Uso: docker compose -f docker-compose.yml -f docker-compose.local.yml -f docker-compose.red.yml up -d
+# (sustituye al bind mount de docker-compose.local.yml: mismo destino /app/library).
+services:
+  app:
+    volumes:
+      - documentos-red:/app/library
+
+volumes:
+  documentos-red:
+    # Nombre fijo: el instalador lo borra y lo recrea al cambiar ruta o contraseña (Docker no
+    # actualiza las opciones de un volumen ya creado).
+    name: neurorepo-documentos-red
+    driver: local
+    driver_opts:
+      type: cifs
+      device: ${DOCS_SMB_DEVICE:?Define DOCS_SMB_DEVICE (//servidor/recurso/carpeta)}
+      o: ${DOCS_SMB_OPTS:?Define DOCS_SMB_OPTS (addr=...,username=...,password=...)}

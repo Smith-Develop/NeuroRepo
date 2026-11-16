@@ -1,4 +1,4 @@
-<#
+﻿<#
   Instalador de NeuroRepo para Windows.
 
   Qué hace:
@@ -166,6 +166,74 @@ function Esperar-DockerArrancando {
     return Test-DockerListo
 }
 
+# --- Carpeta de documentos en red ---
+# Docker Desktop corre en una máquina virtual que no ve las unidades de red con letra (G:...): un
+# bind mount de G:\Carpeta sale vacío. Para esas rutas Docker monta el recurso SMB directamente
+# (docker-compose.red.yml), así que hace falta su ruta UNC (\\servidor\recurso) y un usuario de red.
+function Resolver-RutaRed($ruta) {
+    if ($ruta -like '\\*') { return $ruta }
+    if ($ruta -notmatch '^([A-Za-z]):(.*)$') { return $null }
+    $letra = $Matches[1].ToUpper()
+    $resto = $Matches[2]
+    $unidad = Get-PSDrive -Name $letra -PSProvider FileSystem -ErrorAction SilentlyContinue
+    if ($unidad -and $unidad.DisplayRoot -like '\\*') { return $unidad.DisplayRoot.TrimEnd('\') + $resto }
+    # Al ejecutarse como administrador las unidades de red de la sesión normal no se ven, pero su
+    # ruta sigue guardada en el registro del usuario.
+    $clave = Get-ItemProperty -Path "HKCU:\Network\$letra" -ErrorAction SilentlyContinue
+    if ($clave -and $clave.RemotePath) { return $clave.RemotePath.TrimEnd('\') + $resto }
+    return $null
+}
+
+function Configurar-CarpetaRed($unc) {
+    if ($unc -notmatch '^\\\\([^\\]+)\\([^\\]+)(\\.*)?$') {
+        Write-Host "No entiendo la ruta de red '$unc' (debe ser \\servidor\recurso\carpeta)." -ForegroundColor Red
+        return $null
+    }
+    $servidor = $Matches[1]
+    $device = ("//" + $servidor + "/" + $Matches[2] + $Matches[3]) -replace '\\', '/'
+    Write-Host "Carpeta de red detectada: $unc" -ForegroundColor Cyan
+    Write-Host "Docker no ve las unidades de red de Windows, así que se conectará él mismo a esa carpeta"
+    Write-Host "con un usuario de red (normalmente el tuyo, el mismo con el que entras en Windows)."
+
+    $ip = $null
+    try {
+        $ip = [System.Net.Dns]::GetHostAddresses($servidor) |
+            Where-Object { $_.AddressFamily -eq 'InterNetwork' } | Select-Object -First 1
+    } catch { }
+    if ($ip) { $ip = $ip.ToString() } else {
+        $ip = Read-Host "No consigo la IP de '$servidor'. Escríbela (la ves con: ping $servidor)"
+        if ([string]::IsNullOrWhiteSpace($ip)) { return $null }
+    }
+
+    $usuario = Read-Host "Usuario de red [$env:USERNAME]"
+    if ([string]::IsNullOrWhiteSpace($usuario)) { $usuario = $env:USERNAME }
+    $dominioPorDefecto = if ($env:USERDOMAIN -and $env:USERDOMAIN -ne $env:COMPUTERNAME) { $env:USERDOMAIN } else { "" }
+    $dominio = Read-Host "Dominio de red [$dominioPorDefecto]"
+    if ([string]::IsNullOrWhiteSpace($dominio)) { $dominio = $dominioPorDefecto }
+    do {
+        $claveSegura = Read-Host "Contraseña de red de $usuario" -AsSecureString
+        $bstr = [Runtime.InteropServices.Marshal]::SecureStringToBSTR($claveSegura)
+        $clave = [Runtime.InteropServices.Marshal]::PtrToStringUni($bstr)
+        [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
+    } while ([string]::IsNullOrWhiteSpace($clave))
+
+    # En las opciones de montaje la coma separa campos: dentro de un valor se escribe doble.
+    $opts = "addr=$ip,username=$($usuario -replace ',', ',,'),password=$($clave -replace ',', ',,')"
+    if ($dominio) { $opts += ",domain=$dominio" }
+    # Lectura/escritura para la app (corre como root en el contenedor) y nombres con tildes.
+    $opts += ",uid=0,gid=0,file_mode=0777,dir_mode=0777,noperm,iocharset=utf8"
+
+    Write-Host "AVISO: la contraseña de red queda guardada en el archivo .env de esta carpeta." -ForegroundColor Yellow
+    Write-Host "Si la cambias en Windows, vuelve a ejecutar este instalador y elige reconfigurar." -ForegroundColor Yellow
+    return [pscustomobject]@{ Device = $device; Opts = $opts }
+}
+
+# Valor para el .env de Docker Compose sin que $, # o espacios se interpreten.
+function Formatear-ValorEnv($valor) {
+    if ($valor -notmatch "'") { return "'$valor'" }
+    return '"' + ($valor -replace '\\', '\\' -replace '"', '\"' -replace '\$', '$$$$') + '"'
+}
+
 # --- 0. Proyecto (descargarlo de GitHub si hace falta) ---
 $RepoRoot = Descargar-Proyecto
 $EnvFile = Join-Path $RepoRoot ".env"
@@ -223,9 +291,25 @@ if ($reconfigurar) {
         [Runtime.InteropServices.Marshal]::ZeroFreeBSTR($bstr)
     } while ([string]::IsNullOrWhiteSpace($adminClave))
 
+    $red = $null
     do {
-        $carpetaDocs = Read-Host "Ruta completa de la carpeta con los documentos (ej: C:\Documentos\Empresa)"
-        if (-not [string]::IsNullOrWhiteSpace($carpetaDocs) -and -not (Test-Path $carpetaDocs)) {
+        $carpetaDocs = Read-Host "Ruta completa de la carpeta con los documentos (ej: C:\Documentos\Empresa, G:\Compartido o \\servidor\carpeta)"
+        if ([string]::IsNullOrWhiteSpace($carpetaDocs)) { continue }
+        $carpetaDocs = $carpetaDocs.Trim().Trim('"').TrimEnd('\')
+        $unc = Resolver-RutaRed $carpetaDocs
+        if ($unc) {
+            $red = Configurar-CarpetaRed $unc
+            if (-not $red) { $carpetaDocs = "" }
+            continue
+        }
+        if ($carpetaDocs -match '^[A-Za-z]:' -and -not (Test-Path (Split-Path -Qualifier $carpetaDocs))) {
+            Write-Host "No encuentro la unidad $(Split-Path -Qualifier $carpetaDocs) desde aquí." -ForegroundColor Yellow
+            Write-Host "Si es una unidad de red, escribe su ruta completa (\\servidor\recurso\carpeta)."
+            Write-Host "La ves en una consola normal con:  net use"
+            $carpetaDocs = ""
+            continue
+        }
+        if (-not (Test-Path $carpetaDocs)) {
             $crear = Read-Host "Esa carpeta no existe. ¿Crearla? (S/n)"
             if ($crear -notmatch '^[nN]') {
                 New-Item -ItemType Directory -Path $carpetaDocs -Force | Out-Null
@@ -241,14 +325,24 @@ if ($reconfigurar) {
     $intervalo = Read-Host "Cada cuántos minutos se reindexa la biblioteca [15]"
     if ([string]::IsNullOrWhiteSpace($intervalo)) { $intervalo = "15" }
 
+    $lineasRed = @()
+    if ($red) {
+        $lineasRed = @(
+            "DOCS_SMB_DEVICE=$(Formatear-ValorEnv $red.Device)"
+            "DOCS_SMB_OPTS=$(Formatear-ValorEnv $red.Opts)"
+        )
+    }
+
     @(
-        "DOCS_HOST_PATH=$carpetaDocs"
+        # Con carpeta de red, DOCS_HOST_PATH solo es informativo (docker-compose.local.yml lo exige),
+        # el montaje real lo hace docker-compose.red.yml con DOCS_SMB_*.
+        "DOCS_HOST_PATH=$(Formatear-ValorEnv $carpetaDocs)"
         "OLLAMA_MODEL=$modelo"
         "SCAN_INTERVAL_MINUTES=$intervalo"
         "BOOTSTRAP_ADMIN_NAME=$adminNombre"
         "BOOTSTRAP_ADMIN_DNI=$adminDni"
         "BOOTSTRAP_ADMIN_PASSWORD=$adminClave"
-    ) | Set-Content -Path $EnvFile -Encoding UTF8
+    ) + $lineasRed | Set-Content -Path $EnvFile -Encoding UTF8
 
     Write-Host "Configuración guardada en $EnvFile" -ForegroundColor Green
 }
@@ -269,6 +363,13 @@ try {
     if ((Test-Path "server\node_modules") -and (Test-Path "client\dist\index.html") -and (Test-Path "docker-compose.offline.yml")) {
         Write-Host "Paquete offline detectado: se usan las dependencias incluidas, sin descargar nada de npm."
         $composeFiles += @("-f", "docker-compose.offline.yml")
+    }
+    if (Select-String -Path $EnvFile -Pattern '^DOCS_SMB_DEVICE=' -Quiet) {
+        Write-Host "Carpeta de red: Docker la montará directamente desde el servidor (SMB)."
+        $composeFiles += @("-f", "docker-compose.red.yml")
+        # Docker no actualiza las opciones de un volumen ya creado (ruta, contraseña...): se recrea.
+        docker compose @composeFiles down 2>$null | Out-Null
+        docker volume rm neurorepo-documentos-red 2>$null | Out-Null
     }
     docker compose @composeFiles up -d --build
     $composeOk = ($LASTEXITCODE -eq 0)
