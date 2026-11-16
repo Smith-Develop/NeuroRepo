@@ -19,8 +19,11 @@ Responde en español a la pregunta usando SOLO la información de los fragmentos
 dan, numerados [1], [2]... Reglas:
 - No uses conocimientos propios ni inventes datos, cifras, nombres ni fechas.
 - Indica de qué documento sale cada dato poniendo su número entre corchetes, p. ej. [2].
-- Si los fragmentos no contienen la respuesta, dilo claramente ("No lo encuentro en los documentos")
-  y sugiere qué documento de la lista podría revisar.
+- Si te piden documentos o "todo lo" de un tema, cliente, proveedor o proyecto, no digas que no lo
+  encuentras: haz una lista con cada documento relacionado ([n] y nombre) y, en una línea, qué dice
+  de ese tema.
+- Si es una pregunta concreta y los fragmentos no contienen la respuesta, dilo claramente ("No lo
+  encuentro en los documentos") y sugiere qué documento de la lista podría revisar.
 - Sé breve y concreto: unas pocas frases o una lista corta.`;
 
 async function chat(messages, options = {}) {

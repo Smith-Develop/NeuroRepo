@@ -2,7 +2,15 @@ import { Document } from "./models.js";
 
 // Reordena por cuántas palabras distintas de la pregunta aparecen (raíz de 5 letras, sin tildes)
 const norm = (s) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
-const STOP = new Set(["como", "cual", "cuales", "donde", "cuando", "para", "porque", "que", "necesito", "busco", "quiero", "tengo", "esta", "este", "esto", "sobre", "with"]);
+// Palabras de relleno que no dicen QUÉ se busca: si contaran, un documento que dice "todos los
+// talleres" adelantaría a los que de verdad hablan del tema ("Necesito todo lo de Servolab").
+const STOP = new Set([
+  "como", "cual", "cuales", "donde", "cuando", "para", "porque", "que", "necesito", "necesitamos", "busco", "buscar",
+  "quiero", "queria", "tengo", "tiene", "tienen", "esta", "este", "esto", "estos", "estas", "sobre", "with",
+  "todo", "toda", "todos", "todas", "dame", "puedes", "podrias", "saber", "relacionado", "relacionados", "relacionada",
+  "referente", "informacion", "documento", "documentos", "documentacion", "archivo", "archivos", "cosas", "algo",
+  "hola", "favor", "gracias", "existe", "hay",
+]);
 
 const stemsOf = (query) => [...new Set(norm(query).split(/[^a-z0-9ñ]+/).filter((w) => w.length >= 4 && !STOP.has(w)).map((w) => w.slice(0, 5)))];
 
@@ -36,7 +44,7 @@ export async function searchDocuments(query, limit = 30) {
 // trozos de ~size caracteres puntuados por cuántas raíces de la pregunta contienen, en el orden
 // en que aparecen en el documento, sin pasar de maxChars en total.
 export function bestPassages(query, text, maxChars = 1500, size = 600) {
-  if (!text) return "";
+  if (!text?.trim()) return "(Sin texto extraído: puede ser un documento escaneado o una imagen. Solo se conoce su nombre.)";
   const stems = stemsOf(query);
   const chunks = [];
   for (let i = 0; i < text.length; i += size) chunks.push({ i, t: text.slice(i, i + size) });

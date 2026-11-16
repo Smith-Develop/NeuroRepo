@@ -75,6 +75,9 @@ Nada depende de APIs de pago.
   `GET /library` devuelve `ocr`, `ocrPending` y `ocrFailed`, que se muestran en «Vincular biblioteca».
 - `server/src/search.js` – `searchDocuments(query)`: `$text` de Mongo + `rerank` (coincidencia de palabras
   distintas de la consulta, raíz de 5 letras sin tildes, igual criterio que el buscador anterior de notas).
+  `rerank` ordena primero por esas coincidencias, así que las palabras de relleno («todo», «documento»,
+  «información»…) van en `STOP`: si contaran, «Necesito todo lo de Servolab» ponía primero un documento
+  que solo decía «todos los talleres» (pasó con datos reales).
   **Importante**: la puntuación (`score: {$meta:"textScore"}`) va en la MISMA llamada a `.find()`/proyección
   que el resto de campos — encadenar un `.select()` aparte la pisa y `score` llega `undefined` (bug real que
   apareció al construirlo; dejarlo documentado para no repetirlo).
