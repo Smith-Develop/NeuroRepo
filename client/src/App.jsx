@@ -10,6 +10,7 @@ import ActivityLog from "./ActivityLog";
 import LibraryPicker from "./LibraryPicker";
 import Toaster from "./Toaster";
 import Favorites from "./Favorites";
+import GuideEditor from "./GuideEditor";
 import { toast } from "./toast";
 import { newConversationId, deleteConversation } from "./chatHistory";
 import { AppContext } from "./appContext";
@@ -105,6 +106,7 @@ export default function App() {
           {view === "usuarios" && user.role === "admin" && <Users currentUser={user} />}
           {view === "grupos" && user.role === "admin" && <Groups />}
           {view === "registro" && user.role === "admin" && <ActivityLog />}
+          {view === "guia" && user.role === "admin" && <GuideEditor />}
           {error && <p className="error" role="alert" onClick={() => setError("")}>{error}</p>}
         </section>
       </main>

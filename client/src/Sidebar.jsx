@@ -4,7 +4,7 @@ import { api } from "./api";
 import Docu from "./Docu";
 import { toast } from "./toast";
 import { getTheme, setTheme } from "./theme";
-import { ChatIcon, FolderIcon, UsersIcon, ShieldIcon, ActivityIcon, LinkIcon, PlusIcon, LogoutIcon, KeyIcon, XIcon, SunIcon, InfoIcon, StarIcon } from "./icons";
+import { ChatIcon, FolderIcon, UsersIcon, ShieldIcon, ActivityIcon, LinkIcon, PlusIcon, LogoutIcon, KeyIcon, XIcon, SunIcon, InfoIcon, StarIcon, BookIcon } from "./icons";
 import { listConversations, onHistoryChange } from "./chatHistory";
 import AboutDialog from "./AboutDialog";
 
@@ -16,6 +16,7 @@ const ITEMS = [
 const ADMIN_ITEMS = [
   { id: "usuarios", label: "Usuarios", Icon: UsersIcon },
   { id: "grupos", label: "Grupos y permisos", Icon: ShieldIcon },
+  { id: "guia", label: "Guía rápida", Icon: BookIcon },
   { id: "registro", label: "Registro", Icon: ActivityIcon },
 ];
 

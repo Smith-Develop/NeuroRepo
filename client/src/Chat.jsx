@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import DocumentCard from "./DocumentCard";
+import GuideCard from "./GuideCard";
 import Docu from "./Docu";
 import { toast } from "./toast";
 import { FolderIcon, ChevronDownIcon, ChevronRightIcon, UpArrowIcon, LockIcon, SendRequestIcon, CalendarIcon, FileIcon, WrenchIcon, SearchIcon, SparkleIcon } from "./icons";
@@ -40,8 +41,13 @@ function visibleResults(m) {
 
 // Texto de la respuesta con las citas [n] resaltadas
 function AnswerText({ text }) {
-  const parts = text.split(/(\[\d+\])/g);
-  return <div className="answer">{parts.map((p, i) => (/^\[\d+\]$/.test(p) ? <span key={i} className="cite">{p.slice(1, -1)}</span> : p))}</div>;
+  const parts = text.split(/(\[\d+\]|\[Gu[ií]a\])/g);
+  return (
+    <div className="answer">
+      {parts.map((p, i) => (/^\[\d+\]$/.test(p) ? <span key={i} className="cite">{p.slice(1, -1)}</span>
+        : /^\[Gu[ií]a\]$/.test(p) ? <span key={i} className="cite guide">Guía</span> : p))}
+    </div>
+  );
 }
 const now = () => new Date().toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
 
@@ -150,11 +156,11 @@ export default function Chat({ user, conversationId, topFolders = [], onOpenDocu
     setBusy(true);
     try {
       const history = mode === "advanced" ? conversationHistory(messages) : [];
-      const { results, blocked, folder: blockedFolder, message, usedAI, answer, sourceCount, aiError } = await api.ask(q, mode, scope === "all" ? "" : scope, history);
+      const { results, blocked, folder: blockedFolder, message, usedAI, answer, sourceCount, aiError, guide } = await api.ask(q, mode, scope === "all" ? "" : scope, history);
       if (blocked) {
         replace(reply, { kind: "blocked", text: message, folder: blockedFolder });
       } else {
-        replace(reply, { kind: "results", results, usedAI, mode, answer, sourceCount, aiError });
+        replace(reply, { kind: "results", results, usedAI, mode, answer, sourceCount, aiError, guide: guide || [] });
       }
     } catch (err) {
       replace(reply, { kind: "error", text: err.message });
@@ -235,13 +241,18 @@ export default function Chat({ user, conversationId, topFolders = [], onOpenDocu
                     <p className="ai-note">Generada por IA a partir del documento de abajo: compruébala en el original antes de usarla.</p>
                   </div>
                 )}
-                {m.kind === "results" && !m.answer && (
+                {m.kind === "results" && m.guide?.length > 0 && (
+                  <div className="results">
+                    {m.guide.map((g, i) => <GuideCard key={i} entry={g} />)}
+                  </div>
+                )}
+                {m.kind === "results" && !m.answer && !(m.guide?.length && !m.results.length && !m.aiError) && (
                   <div className="bubble">
                     {m.aiError && <p className="error">No he podido preparar la respuesta con IA ({m.aiError}). Te muestro los documentos encontrados.</p>}
                     <p>
                       {m.results.length === 0
                         ? "No he encontrado coincidencias para esa búsqueda. Prueba con otras palabras."
-                        : `He encontrado ${m.results.length} documento${m.results.length > 1 ? "s" : ""}${m.usedAI ? " (búsqueda ampliada)" : ""}.`}
+                        : `${m.guide?.length ? "En la biblioteca, además, h" : "H"}e encontrado ${m.results.length} documento${m.results.length > 1 ? "s" : ""}${m.usedAI ? " (búsqueda ampliada)" : ""}.`}
                     </p>
                   </div>
                 )}

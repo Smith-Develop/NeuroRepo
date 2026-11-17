@@ -585,3 +585,16 @@ button.ft-pick.on { color: var(--text); background: var(--accent-soft); }
 .res .t-link { all: unset; cursor: pointer; }
 .res .t-link:hover { color: var(--accent-text); text-decoration: underline; }
 .res .t-link:focus-visible, .res button.ftype:focus-visible { outline: 2px solid var(--accent-2); outline-offset: 2px; border-radius: 4px; }
+
+/* Guía rápida: tarjeta en el chat y editor del admin */
+.guide-card { padding: 12px 14px; border-radius: var(--r-md); background: var(--surface-2); border: 1px solid var(--accent-line); border-left: 3px solid var(--accent-2); width: min(640px, 100%); }
+.guide-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.guide-head .ic { color: var(--accent-2); display: inline-flex; }
+.guide-body { white-space: pre-wrap; font-size: 13.5px; line-height: 1.55; color: var(--text); overflow-wrap: anywhere; }
+.guide-body.clamp { max-height: 9.5em; overflow: hidden; -webkit-mask-image: linear-gradient(#000 70%, transparent); mask-image: linear-gradient(#000 70%, transparent); }
+.guide-more { margin-top: 6px; }
+.cite.guide { padding: 0 6px; }
+.guide-text { min-height: 60vh; font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-size: 13px; line-height: 1.55; white-space: pre; overflow-wrap: normal; overflow-x: auto; }
+.guide-versions { display: flex; flex-direction: column; gap: 6px; border-bottom: 1px solid var(--border); }
+.guide-version { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; color: var(--text-2); }
+.stat .v.sm { font-size: 13px; font-weight: 500; }

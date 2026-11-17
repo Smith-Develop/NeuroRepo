@@ -100,6 +100,15 @@ Nada depende de APIs de pago.
   (`search.js`): trozos de 600 caracteres con más raíces de la pregunta, hasta 3500 del primer documento
   y 1200 del segundo (antes eran 4 documentos de 1500: el modelo pequeño los mezclaba y citaba mal). Con el modelo de 1,5B las
   respuestas son rápidas (~5 s en CPU) pero a veces imprecisas: la UI avisa de comprobarlas.
+- `server/src/guide.js` – **Guía rápida**: apuntes cortos que mantienen los admins y que el chat
+  consulta ANTES que la biblioteca, en los dos modos. Vive en Mongo (`Guide` singleton con `version`,
+  `GuideVersion` con las 20 anteriores), no en la biblioteca, así que no sale en «Documentos». Es un
+  único texto (como el `.txt` que tenían): `parseGuide` lo trocea por líneas de guiones/«=» (5 o más);
+  título = primera línea con letras; una entrada que empieza por `[solo admin]` solo la reciben los
+  admins (la guía real tenía contraseñas). `searchGuide` puntúa con las raíces de `stemsOf` (×2), las
+  del título y las palabras enteras; exige la mitad de las raíces y la 2.ª entrada debe sacar ≥75 % de
+  la 1.ª. Caché en memoria del troceado, invalidada al guardar. `saveGuide` rechaza con 409 si otro
+  admin guardó entretanto (control de versión). Tests en `server/test/guide.test.js`.
 - `server/src/routes.js` – API bajo `/api`:
   - `GET /documents?q=` (cualquier logueado) → búsqueda con `excerpt` por documento; `?name=&type=`
     (pdf/doc/xls/other) → filtro por nombre o carpeta (regex escapada) y tipo, como mucho 200
@@ -107,7 +116,12 @@ Nada depende de APIs de pago.
   - `GET /documents/summary` → `{total, topFolders}` visibles (contador de la barra lateral y ámbito del
     chat). `GET /documents/children?folder=` → un nivel del árbol: `{folders:[{name, path, count}],
     files, truncated}` (como mucho 2000 archivos por carpeta). Todo filtrado con `folderFilter`.
-  - `POST /ask {question, mode, scope}` (cualquier logueado) → busca por texto; si la mejor coincidencia
+  - `POST /ask {question, mode, scope}` (cualquier logueado) → primero la **guía rápida**
+    (`guide: [{title, body, adminOnly}]`, sin IA); si responde, una carpeta bloqueada no tapa la
+    respuesta. En modo **simple** el respaldo de IA solo entra si no hay guía, la biblioteca no da
+    nada razonable y la pregunta es «compleja» (`COMPLEX_MIN_WORDS`, 4 raíces). En **avanzada**, la
+    guía va a la IA como fuente prioritaria «[Guía]» con un solo documento de apoyo; una cita `[n]`
+    sin documento n se reescribe a `[Guía]`. Después busca por texto; si la mejor coincidencia
     es de una carpeta sin permiso, devuelve el `blockedMessage` de esa carpeta **sin llamar a la IA**; si
     no hay nada razonable (`score` por debajo de `AI_FALLBACK_SCORE`, por defecto 0.3), pide a la IA
     mejores palabras clave y reintenta una vez. `scope` (carpeta de primer nivel) se filtra en el
@@ -118,6 +132,8 @@ Nada depende de APIs de pago.
     («¿y si falla?»).
   - `GET /documents/:id/text` → `{text}`: el texto extraído, para la vista previa de lo que no tiene
     visor propio (`.doc`, `.rtf`, `.pptx`, `.odt`, scripts, logs…).
+  - `GET /guide`, `PUT /guide {text, version}` (409 si cambió), `GET /guide/versions`,
+    `GET /guide/versions/:id` (admin): editor de la guía. Máximo `GUIDE_MAX_CHARS` (400 000).
   - `GET /favorites`, `PUT /favorites/:id`, `DELETE /favorites/:id` (cualquier logueado) → favoritos del
     propio usuario (`User.favorites`, como mucho 300). Añadir comprueba permiso (`findAccessibleDoc`) y
     el listado vuelve a filtrar con `canSeeFolder` (por si el grupo cambió); el más reciente, primero.
@@ -191,6 +207,11 @@ Nada depende de APIs de pago.
   conversaciones `{id, title, scope, messages, updatedAt}`), con evento propio para que `Sidebar.jsx`
   (sección «Historial», borrar con la ×) se actualice. Todo en try/catch: sin almacenamiento, el chat
   funciona igual. No sale del navegador (en otro PC no aparece).
+- `client/src/GuideEditor.jsx` (admin, «Guía rápida» en la barra lateral) – el texto entero en un
+  `textarea` con contadores (entradas, solo admin), importar `.txt` (decodifica UTF-8 o, si no lo es,
+  Windows-1252), descargar `.txt` (UTF-8 con BOM y CRLF, para el Bloc de notas), versiones anteriores
+  («Cargar en el editor») y aviso de cambios sin guardar. `client/src/GuideCard.jsx` – la entrada en el
+  chat (encima de los documentos; plegada si es larga). `AnswerText` resalta `[Guía]`.
 - `client/src/Favorites.jsx` – vista «Favoritos»: los favoritos viven en `App.jsx` (cargados de
   `/favorites`) y se comparten por `AppContext {favorites, favoriteIds, toggleFavorite}`; la estrella de
   `DocumentCard` los cambia con actualización optimista.

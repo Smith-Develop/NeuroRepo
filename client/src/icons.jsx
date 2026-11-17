@@ -128,3 +128,6 @@ export function DownloadIcon(props) {
 export function StarIcon({ filled, ...props }) {
   return <Icon {...props}><path d="m12 3.5 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8-4.3-4.1 5.9-.9z" fill={filled ? "currentColor" : "none"} /></Icon>;
 }
+export function BookIcon(props) {
+  return <Icon {...props}><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H20v15H6.5A2.5 2.5 0 0 0 4 20.5zM4 20.5A2.5 2.5 0 0 0 6.5 23H20v-5M8 7.5h8M8 11h6" /></Icon>;
+}

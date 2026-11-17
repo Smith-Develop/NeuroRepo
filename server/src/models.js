@@ -110,6 +110,17 @@ const trashItemSchema = new mongoose.Schema(
 );
 trashItemSchema.index({ createdAt: -1 });
 
+// Guía rápida (guide.js): un único texto, con versión para no pisar ediciones simultáneas
+const guideSchema = new mongoose.Schema({
+  _id: { type: String },
+  text: { type: String, default: "" },
+  version: { type: Number, default: 0 },
+  updatedAt: { type: Date, default: null },
+  updatedBy: { type: String, default: "" },
+});
+const guideVersionSchema = new mongoose.Schema({ text: String, savedAt: Date, savedBy: String });
+guideVersionSchema.index({ savedAt: -1 });
+
 export const Document = mongoose.model("Document", documentSchema);
 export const FileVersion = mongoose.model("FileVersion", fileVersionSchema);
 export const TrashItem = mongoose.model("TrashItem", trashItemSchema);
@@ -119,3 +130,5 @@ export const AppConfig = mongoose.model("AppConfig", appConfigSchema);
 export const User = mongoose.model("User", userSchema);
 export const Session = mongoose.model("Session", sessionSchema);
 export const ActivityLog = mongoose.model("ActivityLog", activityLogSchema);
+export const Guide = mongoose.model("Guide", guideSchema);
+export const GuideVersion = mongoose.model("GuideVersion", guideVersionSchema);

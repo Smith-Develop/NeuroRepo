@@ -1,7 +1,7 @@
 import { Document } from "./models.js";
 
 // Reordena por cuántas palabras distintas de la pregunta aparecen (raíz de 5 letras, sin tildes)
-const norm = (s) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
+export const norm = (s) => s.toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 // Palabras de relleno que no dicen QUÉ se busca: si contaran, un documento que dice "todos los
 // talleres" adelantaría a los que de verdad hablan del tema ("Necesito todo lo de Servolab").
 const STOP = new Set([
@@ -12,7 +12,7 @@ const STOP = new Set([
   "hola", "favor", "gracias", "existe", "hay",
 ]);
 
-const stemsOf = (query) => [...new Set(norm(query).split(/[^a-z0-9ñ]+/).filter((w) => w.length >= 4 && !STOP.has(w)).map((w) => w.slice(0, 5)))];
+export const stemsOf = (query) => [...new Set(norm(query).split(/[^a-z0-9ñ]+/).filter((w) => w.length >= 4 && !STOP.has(w)).map((w) => w.slice(0, 5)))];
 
 function rerank(query, docs) {
   const stems = stemsOf(query);

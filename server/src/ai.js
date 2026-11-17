@@ -24,6 +24,8 @@ numerados [1], [2], y lo ya hablado en la conversación. Reglas:
 - No uses conocimientos propios ni inventes datos, pasos, cifras, nombres ni fechas.
 - Si piden documentos o "todo lo" de un tema, resume en una o dos frases qué contiene el documento [1]
   sobre ese tema.
+- Si hay apuntes de la "Guía rápida", son la fuente PRIORITARIA (los mantiene el equipo y están al
+  día): úsalos primero y cítalos como [Guía]. Copia tal cual rutas, direcciones, números y nombres.
 - Si los fragmentos no tienen la respuesta, dilo en una sola frase ("No he encontrado eso en los
   documentos.") sin añadir nada más.`;
 
@@ -59,11 +61,14 @@ export function suggestKeywords(question) {
 
 // sources: [{filename, folder, text}] en el orden en que se citan ([1] = sources[0]).
 // history: [{q, a}] turnos anteriores de la conversación (modo avanzado), del más antiguo al último.
-export function answerFromDocuments(question, sources, history = []) {
-  const context = sources.map((s, i) => `[${i + 1}] ${s.folder ? `${s.folder}/` : ""}${s.filename}\n${s.text}`).join("\n\n");
+// guide: [{title, body}] apuntes de la Guía rápida que coinciden con la pregunta (van primero)
+export function answerFromDocuments(question, sources, history = [], guide = []) {
+  const guideText = guide.map((g) => `[Guía] ${g.title}\n${g.body.slice(0, 2000)}`).join("\n\n");
+  const docsText = sources.map((s, i) => `[${i + 1}] ${s.folder ? `${s.folder}/` : ""}${s.filename}\n${s.text}`).join("\n\n");
+  const context = [guideText && `Guía rápida:\n\n${guideText}`, docsText && `Fragmentos de documentos:\n\n${docsText}`].filter(Boolean).join("\n\n");
   return chat([
     { role: "system", content: ANSWER_SYSTEM },
     ...history.flatMap((h) => [{ role: "user", content: h.q }, { role: "assistant", content: h.a }]),
-    { role: "user", content: `Fragmentos de documentos:\n\n${context}\n\nPregunta: ${question}` },
+    { role: "user", content: `${context}\n\nPregunta: ${question}` },
   ], { num_ctx: 8192, num_predict: 500 });
 }

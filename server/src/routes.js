@@ -4,9 +4,10 @@ import multer from "multer";
 import mammoth from "mammoth";
 import * as XLSX from "xlsx";
 import { readFileSync } from "node:fs";
-import { Document, FolderConfig, FileVersion, TrashItem, Group, User } from "./models.js";
+import { Document, FolderConfig, FileVersion, TrashItem, Group, User, GuideVersion } from "./models.js";
 import { requireAdmin, canSeeFolder, folderFilter, folderAncestors } from "./auth.js";
-import { searchDocuments, topScore, bestPassages } from "./search.js";
+import { searchDocuments, topScore, bestPassages, stemsOf } from "./search.js";
+import { guideEntries, searchGuide, getGuide, saveGuide, GUIDE_MAX_CHARS } from "./guide.js";
 import { suggestKeywords, answerFromDocuments, MODEL } from "./ai.js";
 import {
   safeResolve, browseFolder, getActiveLibraryPath, setActiveLibraryPath, getAppConfig, LibraryPathError, LIBRARY_ROOT,
@@ -90,6 +91,9 @@ r.get("/documents/children", wrap(async (req, res) => {
 // documentos encontrados que el usuario puede ver, citándolos ([1] = results[0]...).
 const ANSWER_SOURCES = 2; // pocos y leídos a fondo: con 4 el modelo pequeño mezclaba los documentos
 const HISTORY_TURNS = 3;
+// Modo simple: la IA solo entra como respaldo en preguntas "complejas" (al menos estas palabras con
+// contenido) sin respuesta en la guía y sin buenos resultados en la biblioteca
+const COMPLEX_MIN_WORDS = Number(process.env.COMPLEX_MIN_WORDS) || 4;
 r.post("/ask", wrap(async (req, res) => {
   const question = text(req.body?.question, 500);
   const advanced = req.body?.mode === "advanced";
@@ -100,8 +104,17 @@ r.post("/ask", wrap(async (req, res) => {
     : [];
   if (!question) return res.status(400).json({ error: "Escribe qué documento buscas." });
 
+  // 1) Guía rápida, antes que la biblioteca y sin IA (las entradas [solo admin], solo para admins)
+  const isAdmin = req.user.role === "admin";
+  const entries = await guideEntries();
+  let guide = searchGuide(entries, question, { isAdmin });
+  if (!guide.length && history.length) guide = searchGuide(entries, `${history.at(-1).q} ${question}`, { isAdmin });
+
+  // 2) Biblioteca. Si la mejor coincidencia es de una carpeta sin permiso y la guía no responde, el
+  // mensaje de carpeta bloqueada; si la guía sí responde, se sigue (los documentos sin permiso se
+  // quitan igualmente más abajo).
   let found = await searchDocuments(question);
-  if (found.length && !canSeeFolder(req.user, found[0].folder)) {
+  if (!guide.length && found.length && !canSeeFolder(req.user, found[0].folder)) {
     const folder = found[0].folder;
     await logActivity(req, "search.blocked", `${folder}: ${question}`);
     return res.json({ results: [], blocked: true, folder, message: await blockedMessageFor(folder) });
@@ -120,7 +133,9 @@ r.post("/ask", wrap(async (req, res) => {
   }
 
   let usedAI = false;
-  if (!found.length || topScore(found) < AI_FALLBACK_SCORE) {
+  const weak = !found.length || topScore(found) < AI_FALLBACK_SCORE;
+  const complex = stemsOf(question).length >= COMPLEX_MIN_WORDS;
+  if (weak && !guide.length && (advanced || complex)) {
     try {
       const keywords = await suggestKeywords(question);
       if (keywords) {
@@ -134,20 +149,56 @@ r.post("/ask", wrap(async (req, res) => {
 
   found = found.filter((d) => canSeeFolder(req.user, d.folder) && (!scope || d.topFolder === scope));
   const results = found.slice(0, 10);
-  if (!advanced || !results.length) return res.json({ results, usedAI });
+  if (!advanced || (!results.length && !guide.length)) return res.json({ results, usedAI, guide });
 
-  const sourcesDocs = results.slice(0, ANSWER_SOURCES);
+  // Con respuesta en la guía basta un documento de apoyo: menos texto, menos mezclas del modelo
+  const sourcesDocs = results.slice(0, guide.length ? 1 : ANSWER_SOURCES);
   const texts = await Document.find({ _id: { $in: sourcesDocs.map((d) => d._id) } }, "extractedText").lean();
   const textById = new Map(texts.map((t) => [String(t._id), t.extractedText]));
   // El primero (el que más coincide) se lee mucho más a fondo que el segundo
-  const sources = sourcesDocs.map((d, i) => ({ filename: d.filename, folder: d.folder, text: bestPassages(searchQuery, textById.get(String(d._id)), i === 0 ? 3500 : 1200) }));
+  const docChars = guide.length ? 1200 : 3500;
+  const sources = sourcesDocs.map((d, i) => ({ filename: d.filename, folder: d.folder, text: bestPassages(searchQuery, textById.get(String(d._id)), i === 0 ? docChars : 1200) }));
   try {
-    const answer = await answerFromDocuments(question, sources, history);
-    res.json({ results, usedAI, answer, sourceCount: sources.length });
+    let answer = await answerFromDocuments(question, sources, history, guide);
+    // El modelo pequeño a veces numera la guía como si fuera un documento: una cita [n] sin documento
+    // n detrás se convierte en [Guía]
+    if (guide.length) answer = answer.replace(/\[(\d+)\]/g, (m, n) => (Number(n) > sources.length ? "[Guía]" : m));
+    res.json({ results, usedAI, guide, answer, sourceCount: sources.length });
   } catch (e) {
-    // Sin IA disponible: se devuelven igualmente los documentos, con el motivo
-    res.json({ results, usedAI, aiError: e.message || "La IA no está disponible." });
+    // Sin IA disponible: se devuelven igualmente la guía y los documentos, con el motivo
+    res.json({ results, usedAI, guide, aiError: e.message || "La IA no está disponible." });
   }
+}));
+
+// Guía rápida (admin): el texto entero, como un .txt, con control de versión y las anteriores
+r.get("/guide", requireAdmin, wrap(async (req, res) => {
+  const g = await getGuide();
+  const entries = await guideEntries();
+  res.json({ text: g.text || "", version: g.version || 0, updatedAt: g.updatedAt, updatedBy: g.updatedBy || "",
+    entries: entries.length, adminOnly: entries.filter((e) => e.adminOnly).length });
+}));
+
+r.put("/guide", requireAdmin, wrap(async (req, res) => {
+  const textValue = typeof req.body?.text === "string" ? req.body.text.replace(/\r\n?/g, "\n") : null;
+  const version = Number(req.body?.version);
+  if (textValue === null || !Number.isInteger(version)) return res.status(400).json({ error: "Falta el texto de la guía." });
+  if (textValue.length > GUIDE_MAX_CHARS) return res.status(413).json({ error: `La guía no puede pasar de ${GUIDE_MAX_CHARS.toLocaleString("es-ES")} caracteres.` });
+  const { conflict, current, saved } = await saveGuide(textValue, version, req.user);
+  if (conflict) return res.status(409).json({ error: `Otro administrador (${current.updatedBy || "?"}) la cambió mientras la editabas. Recarga para ver su versión.`, version: current.version });
+  await logActivity(req, "guide.update", `${textValue.length} caracteres`);
+  res.json({ version: saved.version, updatedAt: saved.updatedAt, updatedBy: saved.updatedBy });
+}));
+
+r.get("/guide/versions", requireAdmin, wrap(async (req, res) => {
+  const versions = await GuideVersion.find({}, "savedAt savedBy text").sort({ savedAt: -1 }).lean();
+  res.json(versions.map((v) => ({ _id: v._id, savedAt: v.savedAt, savedBy: v.savedBy, length: (v.text || "").length })));
+}));
+
+r.get("/guide/versions/:id", requireAdmin, wrap(async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).end();
+  const v = await GuideVersion.findById(req.params.id).lean();
+  if (!v) return res.status(404).end();
+  res.json({ text: v.text || "", savedAt: v.savedAt, savedBy: v.savedBy });
 }));
 
 // Favoritos del usuario: documentos marcados desde el chat para no tener que volver a buscarlos.
