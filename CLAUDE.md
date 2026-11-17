@@ -299,6 +299,12 @@ Nada depende de APIs de pago.
   Carpetas comunes `modelo\` y `ollama\` (las buscan `instalar-windows.ps1` y `cargar-modelo.ps1`).
   El paquete se monta a mano (binarios fuera de git): raíz = `instalador/*` + `ui.ps1`, `windows\` =
   paquete DocuPaz-Windows, `docker\` = paquete offline, `pre-instalacion\` = sus scripts.
+- `instalador/Desinstalar-version-anterior.bat`: un solo `.bat` (cmd + una línea de PowerShell, en
+  ASCII y CRLF) que se autoeleva, lista lo encontrado (tareas «NeuroRepo/DocuPaz - App/IA» y
+  `NeuroRepoInstalador`, servicios `NeuroRepoMongo`/`DocuPazMongo`, reglas de firewall, carpeta
+  `C:\NeuroRepo` o `C:\DocuPaz`, contenedores Docker del proyecto `neurorepo`), pide confirmación y lo
+  quita. Por defecto conserva `datos\` (base de datos y modelo) y los volúmenes de Docker; nunca toca
+  la carpeta de documentos.
 - **Estilo visual** (`ui.ps1`, en la raíz del repo): logo DOCUPAZ en bloques, `Ui-Fase`, `Ui-Paso`
   (numerado, con tiempo transcurrido), `Ui-Linea`/`Ui-Ok`/`Ui-Info`/`Ui-Aviso`/`Ui-Fallo` (etiqueta de
   color + clave de 16 columnas + texto) y `Ui-Final` (barra). Lo cargan los cinco scripts (`.\ui.ps1` o
