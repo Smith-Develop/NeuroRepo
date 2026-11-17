@@ -181,8 +181,8 @@ Nada depende de APIs de pago.
 - `server/src/resetAdmin.js` – recuperación de contraseña sin email: `docker compose exec app node
   src/resetAdmin.js <DNI>` (sin DNI lista los admins). Pide la nueva contraseña sin eco, cierra sus
   sesiones y lo deja en el Registro. En Windows, `Restablecer-admin.bat` (raíz del repo) lanza lo mismo.
-- `client/src/Chat.jsx` – en avanzada manda `conversationHistory(messages)` y solo enseña el documento
-  que más coincide (más los que cite la respuesta, `visibleResults`); el resto, tras el botón «¿Quieres
+- `client/src/Chat.jsx` – en avanzada manda `conversationHistory(messages)`. En los dos modos solo enseña
+  el documento que más coincide (en avanzada, más los que cite la respuesta, `visibleResults`); el resto, tras el botón «¿Quieres
   ver N archivos relacionados más?» (`expanded` en el mensaje). Conmutador «Simple / Avanzada» (`.seg` en la barra del compositor; se
   recuerda en `localStorage` `neurorepo.chatMode`). En avanzada pinta la respuesta (`AnswerText`, citas
   `[n]` resaltadas) y numera las tarjetas citadas (`DocumentCard cite`). Cada conversación tiene un id

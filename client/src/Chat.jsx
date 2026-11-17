@@ -32,10 +32,11 @@ function conversationHistory(messages, max = 3) {
   return turns.slice(-max);
 }
 
-// Modo avanzado: se muestra el documento que más coincide (y los que cite la respuesta); el resto,
-// solo si el usuario pide verlos
+// En los dos modos se muestra el documento que más coincide (en avanzada, también los que cite la
+// respuesta); el resto, solo si el usuario pide verlos («¿Quieres ver N archivos relacionados más?»)
 function visibleResults(m) {
-  if (!m.answer || m.expanded) return m.results;
+  if (m.expanded) return m.results;
+  if (!m.answer) return m.results.slice(0, 1);
   return m.results.filter((_, i) => i === 0 || (i < m.sourceCount && m.answer.includes(`[${i + 1}]`)));
 }
 
@@ -264,7 +265,7 @@ export default function Chat({ user, conversationId, topFolders = [], onOpenDocu
                     })}
                   </div>
                 )}
-                {m.kind === "results" && m.answer && !m.expanded && m.results.length > visibleResults(m).length && (
+                {m.kind === "results" && !m.expanded && m.results.length > visibleResults(m).length && (
                   <div className="followups">
                     <button type="button" className="btn btn-secondary btn-sm" onClick={() => replace(m.id, { expanded: true })}>
                       ¿Quieres ver {m.results.length - visibleResults(m).length} archivo{m.results.length - visibleResults(m).length > 1 ? "s" : ""} relacionado{m.results.length - visibleResults(m).length > 1 ? "s" : ""} más?
