@@ -31,9 +31,11 @@ DÓNDE ESTÁ CADA COSA (en C:\NeuroRepo)
   datos\mongo              la base de datos (índice, usuarios, grupos, favoritos)
   datos\ia-modelos         el modelo de IA
   logs\                    app.log, ia.log, mongod.log
+  ocr\                     tesseract + pdftoppm (licencias en ocr\LICENCIAS.txt)
   Restablecer-admin.bat    para recuperar la contraseña del administrador
 
 LIMITACIONES
-  - El OCR (leer escaneos e imágenes) no viene incluido en esta versión para Windows: se indexa el
-    texto de PDF, Word, Excel, etc., pero no el de los escaneos.
+  - El OCR (leer escaneos e imágenes) viene en componentes\ocr (tesseract en español + pdftoppm). La
+    primera vez puede tardar horas en leer todos los escaneos: va en segundo plano y se ve el avance en
+    "Vincular biblioteca". Gasta CPU mientras tanto; las búsquedas siguen funcionando.
   - Es para equipos x64 (Intel/AMD).
