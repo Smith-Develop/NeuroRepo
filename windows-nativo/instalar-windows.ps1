@@ -209,6 +209,15 @@ elseif ($ollamaZip -or $ollamaSetup) { $modoIA = "instalar"; $OllamaExe = $null;
 else { $modoIA = "ninguna"; $OllamaExe = $null; $textoIA = "no hay; solo modo de búsqueda simple" }
 Mostrar "IA (Ollama)" ($modoIA -in "propio", "externo", "sistema") $textoIA
 
+# OCR (leer escaneos e imágenes): tesseract + pdftoppm de componentes\ocr, copiados a $Destino\ocr
+$OcrDir = Join-Path $Destino "ocr"
+$ocrPaquete = Join-Path $PSScriptRoot "componentes\ocr\Library\bin\tesseract.exe"
+$ocrInstalado = (Test-Path (Join-Path $OcrDir "Library\bin\tesseract.exe")) -and (Test-Path (Join-Path $OcrDir "share\tessdata\spa.traineddata"))
+if ($ocrInstalado) { $textoOcr = "instalado en $OcrDir$(if (Test-Path $ocrPaquete) { ', se actualizará solo si cambia' } else { ', se omite' })" }
+elseif (Test-Path $ocrPaquete) { $textoOcr = "se instalará (tesseract en español + pdftoppm)" }
+else { $textoOcr = "no está en componentes\ocr; los escaneos no se leerán" }
+Mostrar "OCR" $ocrInstalado $textoOcr
+
 $appInstalada = Test-Path (Join-Path $Destino "app\server\src\index.js")
 Mostrar "Aplicación" $appInstalada $(if ($appInstalada) { "se actualizará (solo los archivos que cambien)" } else { "se instalará" })
 
@@ -233,6 +242,14 @@ if ($instalarNode) {
     Remove-Item (Join-Path $Destino "node") -Recurse -Force -ErrorAction SilentlyContinue
     Move-Item (Get-ChildItem $tmp -Directory | Select-Object -First 1).FullName (Join-Path $Destino "node")
     Remove-Item $tmp -Recurse -Force -ErrorAction SilentlyContinue
+}
+
+if (Test-Path $ocrPaquete) {
+    Write-Paso "OCR (tesseract + pdftoppm)"
+    # /MIR solo copia lo que haya cambiado: si ya estaba igual, no hace nada
+    Sin-Parar { & robocopy.exe (Join-Path $PSScriptRoot "componentes\ocr") $OcrDir /MIR /NFL /NDL /NJH /NJS /NP | Out-Null }
+    if ($LASTEXITCODE -ge 8) { Write-Host "AVISO: no se pudo copiar el OCR (robocopy $LASTEXITCODE); sigue sin OCR." -ForegroundColor Yellow }
+    else { Write-Host "OCR listo en $OcrDir." }
 }
 
 # --- 6. MongoDB (servicio de Windows) ---
@@ -374,6 +391,12 @@ $iniciarApp = Join-Path $Destino "iniciar-app.cmd"
 @(
     "@echo off"
     "rem Generado por el instalador de NeuroRepo: la aplicación. Se reinicia sola si se cae."
+    "rem OCR: la app busca tesseract y pdftoppm en el PATH; sus DLL y diccionarios van en $OcrDir"
+    "if exist `"$OcrDir\Library\bin\tesseract.exe`" ("
+    "  set `"PATH=$OcrDir\Library\bin;$OcrDir;%PATH%`""
+    "  set `"TESSDATA_PREFIX=$OcrDir\share\tessdata`""
+    "  set `"FONTCONFIG_FILE=$OcrDir\Library\etc\fonts\fonts.conf`""
+    ")"
     "cd /d `"$(Join-Path $Destino 'app\server')`""
     ":inicio"
     "`"$NodeExe`" --env-file-if-exists=.env src\index.js >> `"$(Join-Path $Logs 'app.log')`" 2>&1"

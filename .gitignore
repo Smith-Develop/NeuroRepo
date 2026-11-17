@@ -18,3 +18,4 @@ windows-nativo/componentes/**/*.exe
 windows-nativo/componentes/**/*.gguf
 windows-nativo/componentes/**/*.parte*
 windows-nativo/app/
+windows-nativo/componentes/ocr/

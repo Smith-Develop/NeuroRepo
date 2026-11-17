@@ -351,7 +351,12 @@ falta).
   (`iniciar-*.cmd` con bucle de reinicio, `ExecutionTimeLimit` 0). Con biblioteca de red usa la ruta UNC
   y la tarea de la app corre con un usuario con acceso (contraseña guardada por Windows en la tarea);
   si no, como SYSTEM. El `.env` se escribe sin BOM y con valores entre comillas simples (Node lo lee
-  literal). Sin OCR en esta variante. `LIBRARY_ROOT` se normaliza con `path.resolve` (en Windows llega
+  literal). **OCR**: `componentes\ocr` son los binarios win-64 de conda-forge (tesseract 5.5 + poppler,
+  resueltos desde Linux con `py-rattler`; el servidor de Mannheim corta las conexiones desde la nube),
+  podados a los 55 ejecutables/DLL que de verdad cargan (comprobado leyendo sus imports con `pefile`) y a
+  los diccionarios spa/eng/osd (~100 MB); van a `C:\NeuroRepo\ocr` y `iniciar-app.cmd` añade al PATH
+  `ocr\Library\bin` y `ocr` y fija `TESSDATA_PREFIX`/`FONTCONFIG_FILE`. Poppler es GPL: el paquete
+  lleva `ocr\LICENCIAS.txt` con la licencia y el origen de cada componente. `LIBRARY_ROOT` se normaliza con `path.resolve` (en Windows llega
   con barra final o como `\\servidor\recurso`). Solo x64. Los binarios no van en git.
   **Comprueba antes de instalar** y muestra el inventario ([OK]/[--]): Node (misma versión → se omite),
   runtime VC++ (registro), MongoDB (servicio + mismo hash de `mongod.exe` → solo se asegura de que
