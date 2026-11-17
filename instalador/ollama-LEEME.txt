@@ -1,0 +1,2 @@
+Pon aquí la IA para la opción sin Docker, descargada desde ollama.com en un PC con internet:
+  ollama-windows-amd64.zip  (recomendado)  u  OllamaSetup.exe

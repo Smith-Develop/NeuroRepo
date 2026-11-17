@@ -1,0 +1,34 @@
+DOCUPAZ · INSTALADOR
+====================
+
+Un solo instalador para elegir dónde funciona DocuPaz:
+
+  [1] Windows, sin Docker   Node.js + MongoDB como servicio + IA (Ollama) + OCR.
+                            Funciona en cualquier equipo o máquina virtual, sin reinicios.
+  [2] Docker                Contenedores. Necesita virtualización (en una máquina virtual,
+                            "virtualización anidada") y Docker Desktop.
+
+CÓMO SE USA
+  1. Doble clic en Instalar-DocuPaz.bat (pide permiso de administrador).
+  2. Analiza el equipo (Windows, memoria, virtualización, Docker e instalaciones anteriores) y
+     recomienda una opción. Pulsa Enter para aceptarla o escribe 1 o 2.
+  3. Responde a lo que te pregunte. Al final muestra la dirección para los compañeros:
+     http://<IP-del-equipo>:4000
+
+  Si ya tenías DocuPaz (o NeuroRepo, su nombre anterior) instalado, lo detecta y recomienda
+  actualizar esa misma instalación, conservando los datos.
+
+OPCIONAL: IA DEL MODO AVANZADO (para las dos opciones)
+  modelo\   ->  qwen2.5-1.5b-instruct-q4_k_m.gguf  o sus partes modelo.gguf.parte0, .parte1...
+  ollama\   ->  ollama-windows-amd64.zip  u  OllamaSetup.exe   (solo para la opción sin Docker)
+  Sin esto, DocuPaz funciona igual en modo de búsqueda simple.
+
+OPCIONAL: DOCKER SIN INTERNET
+  Si eliges Docker y no está instalado, mete las partes de Docker Desktop (y el .msi de WSL) en
+  pre-instalacion\instaladores\ (ver pre-instalacion\LEEME.txt): el instalador los usa, y después
+  de reiniciar se vuelve a ejecutar Instalar-DocuPaz.bat.
+
+CARPETAS
+  windows\          la opción sin Docker (se puede usar sola con su Instalar-DocuPaz.bat)
+  docker\           la opción con Docker (el proyecto completo, sin necesidad de internet)
+  pre-instalacion\  WSL2 + Docker Desktop sin internet

@@ -17,6 +17,16 @@
 param([string]$UsuarioOriginal)
 $ErrorActionPreference = "Stop"
 
+# Estilo visual común (ui.ps1, en esta carpeta o en la de arriba). Sin él, salida sencilla.
+$ui = @((Join-Path $PSScriptRoot "ui.ps1"), (Join-Path $PSScriptRoot "..\ui.ps1")) | Where-Object { Test-Path $_ } | Select-Object -First 1
+if ($ui) { . $ui } else {
+    function Ui-Banner($subtitulo) { }
+    function Ui-Paso($texto, $detalle) { Write-Host ""; Write-Host "==> $texto" -ForegroundColor Cyan }
+    function Ui-Linea($etiqueta, $color, $clave, $texto) { Write-Host ("  {0,-6} {1,-14} {2}" -f $etiqueta, $clave, $texto) -ForegroundColor $color }
+    function Ui-Final($texto, [switch]$Fallo) { Write-Host ""; Write-Host $texto -ForegroundColor $(if ($Fallo) { "Red" } else { "Green" }) }
+}
+Ui-Banner "instalación en Windows, sin Docker"
+
 # En PowerShell 5.1, con "Stop", redirigir la salida de error de un programa (2>) lanza una excepción
 # aunque el programa vaya bien: los ejecutables externos se llaman con "Continue".
 function Sin-Parar([scriptblock]$bloque) {
@@ -24,8 +34,12 @@ function Sin-Parar([scriptblock]$bloque) {
     $ErrorActionPreference = "Continue"
     try { & $bloque } finally { $ErrorActionPreference = $previo }
 }
-function Write-Paso($texto) { Write-Host ""; Write-Host "==> $texto" -ForegroundColor Cyan }
-function Salir($codigo) { Write-Host ""; Read-Host "Pulsa Enter para cerrar"; exit $codigo }
+function Write-Paso($texto) { Ui-Paso $texto }
+function Salir($codigo) {
+    if ($codigo -eq 0) { Ui-Final "instalación terminada" } else { Ui-Final "instalación detenida" -Fallo }
+    Read-Host "Pulsa Enter para cerrar"
+    exit $codigo
+}
 function Leer-Clave($pregunta) {
     do {
         $segura = Read-Host $pregunta -AsSecureString
@@ -45,7 +59,6 @@ if (-not $esAdmin) {
 }
 if (-not $UsuarioOriginal) { $UsuarioOriginal = "$env:USERDOMAIN\$env:USERNAME" }
 Set-Location $PSScriptRoot
-Write-Host "Instalador de DocuPaz para Windows (sin Docker)" -ForegroundColor Green
 
 if ((Get-CimInstance Win32_Processor | Select-Object -First 1).Architecture -ne 9) {
     Write-Host "AVISO: este paquete es para equipos x64 (Intel/AMD). En ARM64 funcionaría por emulación, más lento." -ForegroundColor Yellow
@@ -173,9 +186,7 @@ function Esperar-Url($url, $segundos) {
 }
 
 function Mostrar($nombre, $instalado, $detalle) {
-    $marca = if ($instalado) { "[OK]" } else { "[--]" }
-    $color = if ($instalado) { "Green" } else { "Yellow" }
-    Write-Host ("  {0} {1,-22} {2}" -f $marca, $nombre, $detalle) -ForegroundColor $color
+    if ($instalado) { Ui-Linea "OK" Green $nombre $detalle } else { Ui-Linea "FALTA" Yellow $nombre $detalle }
 }
 
 # --- 3. Comprobación previa: qué hay ya instalado (lo que esté se omite) ---
@@ -195,7 +206,7 @@ $vcInstalado = $false
 foreach ($clave in "HKLM:\SOFTWARE\Microsoft\VisualStudio\14.0\VC\Runtimes\x64", "HKLM:\SOFTWARE\WOW6432Node\Microsoft\VisualStudio\14.0\VC\Runtimes\x64") {
     if ((Get-ItemProperty $clave -ErrorAction SilentlyContinue).Installed -eq 1) { $vcInstalado = $true }
 }
-Mostrar "Visual C++ runtime" $vcInstalado $(if ($vcInstalado) { "se omite" } else { "se instalará" })
+Mostrar "VC++ runtime" $vcInstalado $(if ($vcInstalado) { "se omite" } else { "se instalará" })
 
 # MongoDB: se omite la copia si el servicio ya existe con el mismo mongod.exe
 $MongoExe = Join-Path $Destino "mongodb\mongod.exe"
@@ -218,8 +229,11 @@ $OllamaSistema = @(
     $(try { Join-Path ((Get-CimInstance Win32_UserProfile | Where-Object { $_.SID -eq (New-Object Security.Principal.NTAccount($UsuarioOriginal)).Translate([Security.Principal.SecurityIdentifier]).Value }).LocalPath) "AppData\Local\Programs\Ollama\ollama.exe" } catch { $null })
 ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -First 1
 $ollamaFuncionando = Esperar-Url "http://127.0.0.1:11434/api/version" 2
-$ollamaZip = Get-ChildItem "componentes\ollama\ollama-windows-amd64*.zip" -ErrorAction SilentlyContinue | Select-Object -First 1
-$ollamaSetup = Get-ChildItem "componentes\ollama\OllamaSetup*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+# Ollama y el modelo: en componentes\ o en las carpetas comunes del instalador único (..\ollama, ..\modelo)
+$dirsOllama = "componentes\ollama", "..\ollama"
+$dirsModelo = "componentes\modelo", "..\modelo"
+$ollamaZip = Get-ChildItem -Path ($dirsOllama | ForEach-Object { Join-Path $_ "ollama-windows-amd64*.zip" }) -ErrorAction SilentlyContinue | Select-Object -First 1
+$ollamaSetup = Get-ChildItem -Path ($dirsOllama | ForEach-Object { Join-Path $_ "OllamaSetup*.exe" }) -ErrorAction SilentlyContinue | Select-Object -First 1
 if (Test-Path $OllamaPropio) { $modoIA = "propio"; $OllamaExe = $OllamaPropio; $textoIA = "la de DocuPaz ($OllamaPropio), se omite" }
 elseif ($ollamaFuncionando) { $modoIA = "externo"; $OllamaExe = $OllamaSistema; $textoIA = "ya hay una funcionando en el puerto 11434, se usa esa" }
 elseif ($OllamaSistema) { $modoIA = "sistema"; $OllamaExe = $OllamaSistema; $textoIA = "instalada en $OllamaSistema, se usa esa" }
@@ -378,8 +392,8 @@ if ($modoIA -ne "ninguna") {
         } else {
             # Se copia/une siempre en la carpeta de datos (ruta sin espacios para la línea FROM) y se borra
             # al terminar: Ollama guarda su propia copia.
-            $origen = @(Get-ChildItem "componentes\modelo\*.gguf" -ErrorAction SilentlyContinue | Select-Object -First 1)
-            if (-not $origen.Count) { $origen = @(Get-ChildItem "componentes\modelo\*.parte*" -ErrorAction SilentlyContinue | Sort-Object { [int]($_.Name -replace '^.*\.parte', '') }) }
+            $origen = @(Get-ChildItem -Path ($dirsModelo | ForEach-Object { Join-Path $_ "*.gguf" }) -ErrorAction SilentlyContinue | Select-Object -First 1)
+            if (-not $origen.Count) { $origen = @(Get-ChildItem -Path ($dirsModelo | ForEach-Object { Join-Path $_ "*.parte*" }) -ErrorAction SilentlyContinue | Sort-Object { [int]($_.Name -replace '^.*\.parte', '') }) }
             if ($origen.Count) {
                 Write-Host "Preparando el modelo ($($origen.Count) archivo(s))..."
                 $temporal = Join-Path $Datos "modelo-temporal.gguf"

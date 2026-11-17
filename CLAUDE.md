@@ -233,7 +233,7 @@ Nada depende de APIs de pago.
   la base de datos `notas-ia`, las claves de `localStorage` (`neurorepo-theme`, `neurorepo.chat.*`,
   `neurorepo.chatMode`), los volúmenes de Docker y la tarea `NeuroRepoInstalador`. El instalador de
   Windows sin Docker **migra** lo instalado con el nombre antiguo: tareas «NeuroRepo - App/IA» →
-  «DocuPaz - App/IA», servicio `DocuPazMongo` → `DocuPazMongo` (se borra y se crea con la misma base de
+  «DocuPaz - App/IA», servicio `NeuroRepoMongo` → `DocuPazMongo` (se borra y se crea con la misma base de
   datos) y regla de firewall «NeuroRepo» → «DocuPaz»; si existe `C:\NeuroRepo` actualiza ahí, si no
   instala en `C:\DocuPaz`. Al renombrar una tarea que corre con un usuario, pide su contraseña (Windows
   no deja leer la guardada).
@@ -288,6 +288,27 @@ Nada depende de APIs de pago.
   índice (bien hasta decenas de miles de documentos); cada operación del admin espera a reindexar toda la
   biblioteca antes de responder (unos segundos con ~2400 archivos); LDAP/SSO, si algún día sale de una
   oficina.
+
+## Instalador único (`instalador/`, se entrega como «DocuPaz-Instalador»)
+- `Instalar-DocuPaz.bat` → `instalador.ps1`: se autoeleva, analiza el equipo (Windows, CPU, RAM, si es
+  VM, virtualización —`VirtualizationFirmwareEnabled`, o Docker ya funcionando—, Docker y
+  instalaciones previas: `C:\DocuPaz`/`C:\NeuroRepo` o el proyecto Docker `neurorepo`), recomienda
+  (actualizar lo que ya haya; sin virtualización → sin Docker; Docker funcionando → Docker; si no, sin
+  Docker) y delega con `&` en `windows\instalar-windows.ps1`, `docker\instalar.ps1` o, si se elige
+  Docker sin tenerlo y `pre-instalacion\instaladores` trae sus instaladores, `preinstalar.ps1`.
+  Carpetas comunes `modelo\` y `ollama\` (las buscan `instalar-windows.ps1` y `cargar-modelo.ps1`).
+  El paquete se monta a mano (binarios fuera de git): raíz = `instalador/*` + `ui.ps1`, `windows\` =
+  paquete DocuPaz-Windows, `docker\` = paquete offline, `pre-instalacion\` = sus scripts.
+- **Estilo visual** (`ui.ps1`, en la raíz del repo): logo DOCUPAZ en bloques, `Ui-Fase`, `Ui-Paso`
+  (numerado, con tiempo transcurrido), `Ui-Linea`/`Ui-Ok`/`Ui-Info`/`Ui-Aviso`/`Ui-Fallo` (etiqueta de
+  color + clave de 16 columnas + texto) y `Ui-Final` (barra). Lo cargan los cinco scripts (`.\ui.ps1` o
+  `..\ui.ps1`, con una versión mínima de reserva si falta). **Sustituye `Write-Host` y `Read-Host`** con
+  funciones del mismo nombre: los mensajes existentes salen con el estilo según su color (Green=OK,
+  Cyan=INFO, Yellow=AVISO, Red=ERROR, sin color = texto sangrado); para escribir sin estilo, usar
+  `Ui-Escribir` o `Microsoft.PowerShell.Utility\Write-Host`. El banner y el contador de pasos son
+  globales, así que al encadenar instaladores no se repiten. `instalar.ps1` fija
+  `COMPOSE_PROJECT_NAME=neurorepo`, para que los volúmenes no dependan del nombre de la carpeta
+  (`docker\` en el paquete único, `NeuroRepo` en las instalaciones anteriores).
 
 ## Instalador para Windows (`instalar.ps1` / `Instalar.bat`)
 Pensado para pasárselo a alguien sin conocimientos técnicos (p. ej. para usarlo en la red interna de

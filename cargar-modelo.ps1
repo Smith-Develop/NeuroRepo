@@ -10,9 +10,19 @@
     que es el que usa la app; queda guardado en el volumen de Ollama y no hay que repetirlo.
 #>
 $ErrorActionPreference = "Stop"
+
+# Estilo visual común (ui.ps1, en esta carpeta o en la de arriba). Sin él, salida sencilla.
+$ui = @((Join-Path $PSScriptRoot "ui.ps1"), (Join-Path $PSScriptRoot "..\ui.ps1")) | Where-Object { Test-Path $_ } | Select-Object -First 1
+if ($ui) { . $ui } else {
+    function Ui-Banner($subtitulo) { }
+    function Ui-Paso($texto, $detalle) { Write-Host ""; Write-Host "==> $texto" -ForegroundColor Cyan }
+    function Ui-Linea($etiqueta, $color, $clave, $texto) { Write-Host ("  {0,-6} {1,-14} {2}" -f $etiqueta, $clave, $texto) -ForegroundColor $color }
+    function Ui-Final($texto, [switch]$Fallo) { Write-Host ""; Write-Host $texto -ForegroundColor $(if ($Fallo) { "Red" } else { "Green" }) }
+}
+Ui-Banner "cargar el modelo de IA (Docker)"
 Set-Location $PSScriptRoot
 
-$gguf = Get-ChildItem -Path $PSScriptRoot -Filter *.gguf | Select-Object -First 1
+$gguf = Get-ChildItem -Path (Join-Path $PSScriptRoot "*.gguf"), (Join-Path $PSScriptRoot "..\modelo\*.gguf") -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $gguf) {
     $ruta = (Read-Host "No hay ningún .gguf en esta carpeta. Escribe la ruta completa del archivo del modelo").Trim('"')
     if (-not (Test-Path $ruta)) { Write-Host "No encuentro ese archivo." -ForegroundColor Red; exit 1 }
@@ -40,3 +50,4 @@ docker exec $contenedor sh -c 'echo FROM /tmp/modelo.gguf > /tmp/Modelfile && ol
 if ($LASTEXITCODE -ne 0) { Write-Host "Ollama no pudo registrar el modelo." -ForegroundColor Red; exit 1 }
 
 Write-Host "Listo: el modelo $modelo ya está disponible. La búsqueda avanzada del chat ya puede usar la IA." -ForegroundColor Green
+Ui-Final "modelo cargado"

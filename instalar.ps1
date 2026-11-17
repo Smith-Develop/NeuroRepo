@@ -22,10 +22,17 @@ $RepoUrl = "https://github.com/Smith-Develop/NeuroRepo.git"
 $RepoZipUrl = "https://github.com/Smith-Develop/NeuroRepo/archive/refs/heads/main.zip"
 $ResumeTaskName = "NeuroRepoInstalador"
 
-function Write-Paso($texto) {
-    Write-Host ""
-    Write-Host "==> $texto" -ForegroundColor Cyan
+# Estilo visual común (ui.ps1, en esta carpeta o en la de arriba). Sin él, salida sencilla.
+$ui = @((Join-Path $PSScriptRoot "ui.ps1"), (Join-Path $PSScriptRoot "..\ui.ps1")) | Where-Object { Test-Path $_ } | Select-Object -First 1
+if ($ui) { . $ui } else {
+    function Ui-Banner($subtitulo) { }
+    function Ui-Paso($texto, $detalle) { Write-Host ""; Write-Host "==> $texto" -ForegroundColor Cyan }
+    function Ui-Linea($etiqueta, $color, $clave, $texto) { Write-Host ("  {0,-6} {1,-14} {2}" -f $etiqueta, $clave, $texto) -ForegroundColor $color }
+    function Ui-Final($texto, [switch]$Fallo) { Write-Host ""; Write-Host $texto -ForegroundColor $(if ($Fallo) { "Red" } else { "Green" }) }
 }
+Ui-Banner "instalación con Docker"
+
+function Write-Paso($texto) { Ui-Paso $texto }
 
 function Test-Administrador {
     $id = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -356,6 +363,9 @@ if (-not (Get-NetFirewallRule -DisplayName "DocuPaz" -ErrorAction SilentlyContin
 }
 
 # --- 4. Levantar el stack ---
+# Nombre de proyecto fijo: los volúmenes (base de datos, modelo) no dependen del nombre de la carpeta
+# (el instalador único la llama "docker"; las instalaciones anteriores estaban en "NeuroRepo").
+$env:COMPOSE_PROJECT_NAME = "neurorepo"
 Write-Paso "Construyendo y arrancando DocuPaz (la primera vez puede tardar varios minutos: descarga el modelo de IA, ~2 GB)..."
 Push-Location $RepoRoot
 try {
@@ -404,8 +414,6 @@ $ip = (Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
     Select-Object -First 1).IPAddress
 if (-not $ip) { $ip = "localhost" }
 
-Write-Host ""
-Write-Host "============================================================" -ForegroundColor Green
 if ($listo) {
     Write-Host " DocuPaz está funcionando." -ForegroundColor Green
 } else {
@@ -415,6 +423,5 @@ if ($listo) {
 Write-Host " Comparte esta dirección con tus compañeros, en la misma red:" -ForegroundColor Green
 Write-Host ""
 Write-Host "   http://$ip`:4000" -ForegroundColor White
-Write-Host ""
-Write-Host "============================================================" -ForegroundColor Green
+if ($listo) { Ui-Final "instalación terminada" } else { Ui-Final "arrancando en segundo plano" }
 Read-Host "Pulsa Enter para cerrar"

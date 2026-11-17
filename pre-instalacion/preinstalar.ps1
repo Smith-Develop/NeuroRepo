@@ -11,6 +11,16 @@
 param([string]$UsuarioOriginal)
 $ErrorActionPreference = "Stop"
 
+# Estilo visual común (ui.ps1, en esta carpeta o en la de arriba). Sin él, salida sencilla.
+$ui = @((Join-Path $PSScriptRoot "ui.ps1"), (Join-Path $PSScriptRoot "..\ui.ps1")) | Where-Object { Test-Path $_ } | Select-Object -First 1
+if ($ui) { . $ui } else {
+    function Ui-Banner($subtitulo) { }
+    function Ui-Paso($texto, $detalle) { Write-Host ""; Write-Host "==> $texto" -ForegroundColor Cyan }
+    function Ui-Linea($etiqueta, $color, $clave, $texto) { Write-Host ("  {0,-6} {1,-14} {2}" -f $etiqueta, $clave, $texto) -ForegroundColor $color }
+    function Ui-Final($texto, [switch]$Fallo) { Write-Host ""; Write-Host $texto -ForegroundColor $(if ($Fallo) { "Red" } else { "Green" }) }
+}
+Ui-Banner "pre-instalación: WSL2 + Docker Desktop"
+
 # En PowerShell 5.1, con "Stop", redirigir la salida de error de un programa (2>) lanza una excepción
 # aunque el programa vaya bien: los ejecutables externos se llaman con "Continue".
 function Sin-Parar([scriptblock]$bloque) {
@@ -18,8 +28,12 @@ function Sin-Parar([scriptblock]$bloque) {
     $ErrorActionPreference = "Continue"
     try { & $bloque } finally { $ErrorActionPreference = $previo }
 }
-function Write-Paso($texto) { Write-Host ""; Write-Host "==> $texto" -ForegroundColor Cyan }
-function Salir($codigo) { Write-Host ""; Read-Host "Pulsa Enter para cerrar"; exit $codigo }
+function Write-Paso($texto) { Ui-Paso $texto }
+function Salir($codigo) {
+    if ($codigo -eq 0) { Ui-Final "instalación terminada" } else { Ui-Final "instalación detenida" -Fallo }
+    Read-Host "Pulsa Enter para cerrar"
+    exit $codigo
+}
 
 # --- Administrador (relanza elevado; recuerda el usuario normal para darle permiso de usar Docker) ---
 $esAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -30,7 +44,6 @@ if (-not $esAdmin) {
 }
 if (-not $UsuarioOriginal) { $UsuarioOriginal = "$env:USERDOMAIN\$env:USERNAME" }
 Set-Location $PSScriptRoot
-Write-Host "Pre-instalación de DocuPaz: WSL2 + Docker Desktop (sin internet)" -ForegroundColor Green
 
 # --- 1. Arquitectura ---
 $cpuInfo = Get-CimInstance Win32_Processor | Select-Object -First 1
