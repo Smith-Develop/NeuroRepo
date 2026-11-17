@@ -106,7 +106,7 @@ Nada depende de APIs de pago.
   único texto (como el `.txt` que tenían): `parseGuide` lo trocea por líneas de guiones/«=» (5 o más);
   título = primera línea con letras; una entrada que empieza por `[solo admin]` solo la reciben los
   admins (la guía real tenía contraseñas). `searchGuide` puntúa con las raíces de `stemsOf` (×2), las
-  del título y las palabras enteras; exige la mitad de las raíces y la 2.ª entrada debe sacar ≥75 % de
+  del título y las palabras enteras; las siglas de 3 letras (VPN, SMS, APM; `SHORT_STOP` quita «que», «con»…) cuentan solo como palabra entera, porque `stemsOf` descarta lo de menos de 4 letras; exige la mitad de las raíces y la 2.ª entrada debe sacar ≥75 % de
   la 1.ª. Caché en memoria del troceado, invalidada al guardar. `saveGuide` rechaza con 409 si otro
   admin guardó entretanto (control de versión). Tests en `server/test/guide.test.js`.
 - `server/src/routes.js` – API bajo `/api`:

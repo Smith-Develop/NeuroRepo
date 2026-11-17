@@ -34,6 +34,11 @@ https://correo.ejemplo.org
 
 ----------------------------------------------------------
 
+Altas · VPN Escritorio o VPN HCIS
+Añadir al grupo gVPN_HULP_GAR_2.
+
+----------------------------------------------------------
+
 Teléfonos.
 Si queremos llamar a moviles pulsamos el 0 y marcamos movil.
 Centralita marcamos el 9 y esperamos
@@ -41,7 +46,7 @@ Centralita marcamos el 9 y esperamos
 
 test("parseGuide separa por líneas de guiones y detecta [solo admin]", () => {
   const entries = parseGuide(TEXTO);
-  assert.equal(entries.length, 6);
+  assert.equal(entries.length, 7);
   assert.equal(entries[1].title, "Restaurar Archivos.");
   assert.equal(entries[2].adminOnly, true);
   assert.equal(entries[2].title, "Conexiones servidor investigacion.");
@@ -74,4 +79,10 @@ test("una palabra entera pesa más que una raíz parecida («centralita» frente
   const r = searchGuide(parseGuide(TEXTO), "como llamo a la centralita");
   assert.equal(r[0].title, "Teléfonos.");
   assert.equal(r.length, 1);
+});
+
+test("las siglas de 3 letras (VPN) cuentan como palabra entera", () => {
+  const entries = parseGuide(TEXTO);
+  assert.equal(searchGuide(entries, "acceso a la VPN")[0].title, "Altas · VPN Escritorio o VPN HCIS");
+  assert.equal(searchGuide(entries, "que con los").length, 0);
 });

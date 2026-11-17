@@ -12,6 +12,8 @@ export const GUIDE_MAX_CHARS = 400_000; // por debajo del límite de 1 MB de exp
 export const GUIDE_VERSIONS_MAX = 20;
 const SEPARATOR = /^\s*[-=_]{5,}\s*$/m;
 const ADMIN_TAG = /^\s*\[\s*solo\s+admin\s*\]\s*/i;
+// Palabras de 3 letras que no dicen nada; el resto (VPN, SMS, APM...) cuenta como palabra entera
+const SHORT_STOP = new Set(["que", "con", "del", "los", "las", "una", "uno", "por", "mas", "sin", "son", "sus", "hay", "muy", "ese", "esa", "eso", "mis", "tus", "les", "nos", "ver", "doy", "dar", "pon", "cual", "the", "and", "for"]);
 
 export function parseGuide(text) {
   return (text || "")
@@ -34,15 +36,19 @@ export function parseGuide(text) {
 // de las raíces, y una segunda entrada solo sale si puntúa cerca de la primera.
 export function searchGuide(entries, question, { isAdmin = false, max = 2 } = {}) {
   const stems = stemsOf(question);
-  if (!stems.length) return [];
-  const words = [...new Set(norm(question).split(/[^\p{L}\p{N}]+/u).filter((w) => w.length >= 4))];
-  const needed = Math.max(1, Math.ceil(stems.length / 2));
+  const tokens = norm(question).split(/[^\p{L}\p{N}]+/u);
+  const words = [...new Set(tokens.filter((w) => w.length >= 4))];
+  // Siglas y palabras de 3 letras (VPN, SMS, APM): solo cuentan si aparecen como palabra entera
+  const shorts = [...new Set(tokens.filter((w) => w.length === 3 && !SHORT_STOP.has(w)))];
+  if (!stems.length && !shorts.length) return [];
+  const asWord = (w) => new RegExp(`(^|[^\\p{L}\\p{N}])${w}($|[^\\p{L}\\p{N}])`, "u");
+  const needed = Math.max(1, Math.ceil((stems.length + shorts.length) / 2));
   const ranked = entries
     .filter((e) => isAdmin || !e.adminOnly)
     .map((e) => {
-      const hits = stems.filter((s) => e.hay.includes(s)).length;
-      const inTitle = stems.filter((s) => e.titleHay.includes(s)).length;
-      const whole = words.filter((w) => new RegExp(`(^|[^\\p{L}\\p{N}])${w}($|[^\\p{L}\\p{N}])`, "u").test(e.hay)).length;
+      const hits = stems.filter((s) => e.hay.includes(s)).length + shorts.filter((w) => asWord(w).test(e.hay)).length;
+      const inTitle = stems.filter((s) => e.titleHay.includes(s)).length + shorts.filter((w) => asWord(w).test(e.titleHay)).length;
+      const whole = words.filter((w) => asWord(w).test(e.hay)).length;
       return { e, hits, score: hits * 2 + inTitle + whole };
     })
     .filter((r) => r.hits >= needed)
