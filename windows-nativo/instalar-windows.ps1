@@ -1,5 +1,5 @@
 ﻿<#
-    Instalador de NeuroRepo para Windows SIN Docker (máquinas virtuales sin virtualización anidada,
+    Instalador de DocuPaz para Windows SIN Docker (máquinas virtuales sin virtualización anidada,
     o cuando no se quiere Docker). Todo sin internet, con lo que trae esta carpeta:
       app\                 la aplicación ya compilada, con sus dependencias (node_modules)
       componentes\node\    Node.js 22 portable (zip)
@@ -7,8 +7,8 @@
       componentes\ollama\  (opcional) ollama-windows-amd64.zip u OllamaSetup.exe: la IA del modo avanzado
       componentes\modelo\  (opcional) el modelo .gguf o sus partes .parteN
 
-    Instala en C:\NeuroRepo (o donde se elija):
-      - MongoDB como servicio de Windows "NeuroRepoMongo" (solo escucha en 127.0.0.1).
+    Instala en C:\DocuPaz (o donde se elija):
+      - MongoDB como servicio de Windows "DocuPazMongo" (solo escucha en 127.0.0.1).
       - La IA (Ollama) y la app como tareas programadas que arrancan con el equipo, sin iniciar sesión,
         y se reinician solas si se caen. La app corre con un usuario de red cuando la biblioteca está
         en una carpeta compartida (\\servidor\recurso), para poder leerla.
@@ -45,7 +45,7 @@ if (-not $esAdmin) {
 }
 if (-not $UsuarioOriginal) { $UsuarioOriginal = "$env:USERDOMAIN\$env:USERNAME" }
 Set-Location $PSScriptRoot
-Write-Host "Instalador de NeuroRepo para Windows (sin Docker)" -ForegroundColor Green
+Write-Host "Instalador de DocuPaz para Windows (sin Docker)" -ForegroundColor Green
 
 if ((Get-CimInstance Win32_Processor | Select-Object -First 1).Architecture -ne 9) {
     Write-Host "AVISO: este paquete es para equipos x64 (Intel/AMD). En ARM64 funcionaría por emulación, más lento." -ForegroundColor Yellow
@@ -80,22 +80,30 @@ function Valor-Env($valor) {
 }
 
 # --- 1. Dónde instalar ---
-$Destino = Read-Host "Carpeta de instalación [C:\NeuroRepo]"
-if ([string]::IsNullOrWhiteSpace($Destino)) { $Destino = "C:\NeuroRepo" }
+# Las instalaciones de antes del cambio de nombre están en C:\NeuroRepo: se actualizan ahí
+$porDefecto = if (Test-Path "C:\NeuroRepo\app\server\src\index.js") { "C:\NeuroRepo" } else { "C:\DocuPaz" }
+$Destino = Read-Host "Carpeta de instalación [$porDefecto]"
+if ([string]::IsNullOrWhiteSpace($Destino)) { $Destino = $porDefecto }
 $Destino = $Destino.Trim().Trim('"').TrimEnd('\')
 $Datos = Join-Path $Destino "datos"
 $Logs = Join-Path $Destino "logs"
 $EnvFile = Join-Path $Destino "app\server\.env"
-$TareaApp = "NeuroRepo - App"
-$TareaIA = "NeuroRepo - IA"
-$Servicio = "NeuroRepoMongo"
+$TareaApp = "DocuPaz - App"
+$TareaIA = "DocuPaz - IA"
+$Servicio = "DocuPazMongo"
+# Nombres de antes (el producto se llamaba NeuroRepo): se migran a los nuevos con los mismos datos
+$TareaAppVieja = "NeuroRepo - App"
+$TareaIAVieja = "NeuroRepo - IA"
+$ServicioViejo = "NeuroRepoMongo"
 $Modelo = "qwen2.5:1.5b"
 
 # --- 2. Configuración ---
-$tareaAppExiste = [bool](Get-ScheduledTask -TaskName $TareaApp -ErrorAction SilentlyContinue)
+$viejaApp = Get-ScheduledTask -TaskName $TareaAppVieja -ErrorAction SilentlyContinue
+$migrarApp = $viejaApp -and -not (Get-ScheduledTask -TaskName $TareaApp -ErrorAction SilentlyContinue)
+$tareaAppExiste = [bool](Get-ScheduledTask -TaskName $TareaApp -ErrorAction SilentlyContinue) -or [bool]$viejaApp
 $reconfigurar = $true
 if ((Test-Path $EnvFile) -and $tareaAppExiste) {
-    $reconfigurar = (Read-Host "NeuroRepo ya está instalado aquí. ¿Volver a configurarlo? (s/N; con N solo se actualiza la app)") -match '^[sS]'
+    $reconfigurar = (Read-Host "DocuPaz ya está instalado aquí. ¿Volver a configurarlo? (s/N; con N solo se actualiza la app)") -match '^[sS]'
 }
 
 if ($reconfigurar) {
@@ -103,7 +111,7 @@ if ($reconfigurar) {
     $adminNombre = Read-Host "Nombre del administrador [Administrador]"
     if ([string]::IsNullOrWhiteSpace($adminNombre)) { $adminNombre = "Administrador" }
     do { $adminDni = Read-Host "DNI del administrador (se usa para iniciar sesión)" } while ([string]::IsNullOrWhiteSpace($adminDni))
-    $adminClave = Leer-Clave "Contraseña del administrador de NeuroRepo"
+    $adminClave = Leer-Clave "Contraseña del administrador de DocuPaz"
 
     $usuarioTarea = $null
     do {
@@ -131,6 +139,15 @@ if ($reconfigurar) {
 
     $intervalo = Read-Host "Cada cuántos minutos se reindexa la biblioteca [15]"
     if ([string]::IsNullOrWhiteSpace($intervalo)) { $intervalo = "15" }
+} elseif ($migrarApp) {
+    # Al renombrar la tarea hay que volver a darle el usuario con el que corre (Windows no deja leer
+    # la contraseña guardada en la tarea antigua)
+    $uid = $viejaApp.Principal.UserId
+    if ($uid -and $uid -notin "SYSTEM", "NT AUTHORITY\SYSTEM", "S-1-5-18") {
+        $usuarioTarea = $uid
+        Write-Host "El producto ahora se llama DocuPaz y su tarea programada se renombra." -ForegroundColor Cyan
+        $claveTarea = Leer-Clave "Contraseña de Windows de $usuarioTarea (la que usa la app para leer la carpeta de red)"
+    }
 }
 
 # --- Utilidades: tareas programadas y espera de un servicio web ---
@@ -187,10 +204,11 @@ $servicioMongo = Get-Service $Servicio -ErrorAction SilentlyContinue
 $copiarMongo = -not (Test-Path $MongoExe)
 if (-not $copiarMongo -and (Test-Path $mongoPaquete)) { $copiarMongo = (Get-FileHash $MongoExe).Hash -ne (Get-FileHash $mongoPaquete).Hash }
 if ($copiarMongo -and -not (Test-Path $mongoPaquete)) { Write-Host "ERROR: falta componentes\mongodb\mongod.exe" -ForegroundColor Red; Salir 1 }
+$servicioMongoViejo = Get-Service $ServicioViejo -ErrorAction SilentlyContinue
 $mongoListo = $servicioMongo -and -not $copiarMongo
-Mostrar "MongoDB" $mongoListo $(if ($mongoListo) { "servicio $Servicio ($($servicioMongo.Status)), se omite" } elseif ($servicioMongo) { "se actualizará mongod.exe" } else { "se instalará como servicio" })
+Mostrar "MongoDB" $mongoListo $(if ($servicioMongoViejo -and -not $servicioMongo) { "se renombrará el servicio $ServicioViejo a $Servicio (mismos datos)" } elseif ($mongoListo) { "servicio $Servicio ($($servicioMongo.Status)), se omite" } elseif ($servicioMongo) { "se actualizará mongod.exe" } else { "se instalará como servicio" })
 
-# IA (Ollama): la de NeuroRepo, una ya instalada en el sistema o una que ya esté funcionando.
+# IA (Ollama): la de DocuPaz, una ya instalada en el sistema o una que ya esté funcionando.
 # Si hay alguna, no se instala nada y se pasa directamente al modelo.
 $OllamaPropio = Join-Path $Destino "ollama\ollama.exe"
 $OllamaSistema = @(
@@ -202,7 +220,7 @@ $OllamaSistema = @(
 $ollamaFuncionando = Esperar-Url "http://127.0.0.1:11434/api/version" 2
 $ollamaZip = Get-ChildItem "componentes\ollama\ollama-windows-amd64*.zip" -ErrorAction SilentlyContinue | Select-Object -First 1
 $ollamaSetup = Get-ChildItem "componentes\ollama\OllamaSetup*.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
-if (Test-Path $OllamaPropio) { $modoIA = "propio"; $OllamaExe = $OllamaPropio; $textoIA = "la de NeuroRepo ($OllamaPropio), se omite" }
+if (Test-Path $OllamaPropio) { $modoIA = "propio"; $OllamaExe = $OllamaPropio; $textoIA = "la de DocuPaz ($OllamaPropio), se omite" }
 elseif ($ollamaFuncionando) { $modoIA = "externo"; $OllamaExe = $OllamaSistema; $textoIA = "ya hay una funcionando en el puerto 11434, se usa esa" }
 elseif ($OllamaSistema) { $modoIA = "sistema"; $OllamaExe = $OllamaSistema; $textoIA = "instalada en $OllamaSistema, se usa esa" }
 elseif ($ollamaZip -or $ollamaSetup) { $modoIA = "instalar"; $OllamaExe = $null; $textoIA = "se instalará desde componentes\ollama" }
@@ -224,6 +242,17 @@ Mostrar "Aplicación" $appInstalada $(if ($appInstalada) { "se actualizará (sol
 # --- 4. Parar solo lo que se va a cambiar ---
 Write-Paso "Preparando $Destino"
 Sin-Parar { Stop-ScheduledTask -TaskName $TareaApp -ErrorAction SilentlyContinue }
+# Tareas con el nombre antiguo: se paran y se quitan (se vuelven a crear con el nombre nuevo)
+foreach ($vieja in $TareaAppVieja, $TareaIAVieja) {
+    if (Get-ScheduledTask -TaskName $vieja -ErrorAction SilentlyContinue) {
+        Sin-Parar { Stop-ScheduledTask -TaskName $vieja -ErrorAction SilentlyContinue }
+        Unregister-ScheduledTask -TaskName $vieja -Confirm:$false
+        if ($vieja -eq $TareaIAVieja) {
+            Get-Process ollama -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($Destino, [StringComparison]::OrdinalIgnoreCase) } | Stop-Process -Force
+            $ollamaFuncionando = $false
+        }
+    }
+}
 Get-Process node -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.Path.StartsWith($Destino, [StringComparison]::OrdinalIgnoreCase) } | Stop-Process -Force
 foreach ($d in $Destino, $Datos, $Logs, (Join-Path $Datos "mongo"), (Join-Path $Datos "ia-modelos")) { New-Item -ItemType Directory -Path $d -Force | Out-Null }
 
@@ -260,13 +289,19 @@ if (-not $vcInstalado) {
     if ($p.ExitCode -notin 0, 1638, 3010) { Write-Host "AVISO: el runtime de Visual C++ terminó con el código $($p.ExitCode)." -ForegroundColor Yellow }
 }
 New-Item -ItemType Directory -Path (Join-Path $Destino "mongodb") -Force | Out-Null
+if ($servicioMongoViejo -and -not $servicioMongo) {
+    # Servicio con el nombre antiguo: se quita y se crea el nuevo abajo, con la misma base de datos
+    Stop-Service $ServicioViejo -Force
+    Sin-Parar { & sc.exe delete $ServicioViejo | Out-Null }
+    Start-Sleep -Seconds 2
+}
 if ($copiarMongo) {
     if ($servicioMongo) { Stop-Service $Servicio -Force }
     Copy-Item $mongoPaquete $MongoExe -Force
 }
 $mongoCfg = Join-Path $Destino "mongodb\mongod.cfg"
 $cfgNueva = @(
-    "# Generado por el instalador de NeuroRepo"
+    "# Generado por el instalador de DocuPaz"
     "storage:"
     "  dbPath: '$(Join-Path $Datos 'mongo')'"
     "  wiredTiger:"
@@ -283,7 +318,7 @@ $cfgNueva = @(
 $cfgCambiada = -not (Test-Path $mongoCfg) -or ((Get-Content $mongoCfg -Raw).Trim() -ne $cfgNueva.Trim())
 if ($cfgCambiada) { Set-Content -Path $mongoCfg -Value $cfgNueva -Encoding ASCII }
 if (-not $servicioMongo) {
-    New-Service -Name $Servicio -DisplayName "NeuroRepo - MongoDB" -StartupType Automatic `
+    New-Service -Name $Servicio -DisplayName "DocuPaz - MongoDB" -StartupType Automatic `
         -BinaryPathName "`"$MongoExe`" --config `"$mongoCfg`" --service" | Out-Null
 } elseif ($cfgCambiada -and -not $copiarMongo) {
     Restart-Service $Servicio -Force
@@ -309,13 +344,13 @@ if ($modoIA -eq "instalar") {
     if (-not (Test-Path $OllamaExe)) { Write-Host "AVISO: no se encontró ollama.exe tras instalarlo; sigue sin IA." -ForegroundColor Yellow; $modoIA = "ninguna" }
 }
 
-# Con una IA propia o del sistema, NeuroRepo la arranca con el equipo (tarea). Con una que ya estaba
+# Con una IA propia o del sistema, DocuPaz la arranca con el equipo (tarea). Con una que ya estaba
 # funcionando por su cuenta (modo "externo"), se usa tal cual y no se crea ninguna tarea.
 if ($modoIA -in "propio", "sistema", "instalar") {
     $iniciarIA = Join-Path $Destino "iniciar-ia.cmd"
     @(
         "@echo off"
-        "rem Generado por el instalador de NeuroRepo: IA local (Ollama). Se reinicia sola si se cae."
+        "rem Generado por el instalador de DocuPaz: IA local (Ollama). Se reinicia sola si se cae."
         "set OLLAMA_HOST=127.0.0.1:11434"
         "set OLLAMA_MODELS=$(Join-Path $Datos 'ia-modelos')"
         "set OLLAMA_KEEP_ALIVE=24h"
@@ -364,14 +399,14 @@ if ($modoIA -ne "ninguna") {
         }
     }
 } else {
-    Write-Host "Sin Ollama: NeuroRepo funcionará solo en modo de búsqueda simple." -ForegroundColor Yellow
+    Write-Host "Sin Ollama: DocuPaz funcionará solo en modo de búsqueda simple." -ForegroundColor Yellow
 }
 
 # --- 8. App ---
 Write-Paso "Configurando la aplicación"
 if ($reconfigurar) {
     $lineas = @(
-        "# Generado por el instalador de NeuroRepo para Windows"
+        "# Generado por el instalador de DocuPaz para Windows"
         "NODE_ENV=production"
         "PORT=4000"
         "MONGODB_URI=mongodb://127.0.0.1:27017/notas-ia"
@@ -390,7 +425,7 @@ if ($reconfigurar) {
 $iniciarApp = Join-Path $Destino "iniciar-app.cmd"
 @(
     "@echo off"
-    "rem Generado por el instalador de NeuroRepo: la aplicación. Se reinicia sola si se cae."
+    "rem Generado por el instalador de DocuPaz: la aplicación. Se reinicia sola si se cae."
     "rem OCR: la app busca tesseract y pdftoppm en el PATH; sus DLL y diccionarios van en $OcrDir"
     "if exist `"$OcrDir\Library\bin\tesseract.exe`" ("
     "  set `"PATH=$OcrDir\Library\bin;$OcrDir;%PATH%`""
@@ -406,14 +441,14 @@ $iniciarApp = Join-Path $Destino "iniciar-app.cmd"
 
 @(
     "@echo off"
-    "rem Restablece la contraseña de un administrador de NeuroRepo (sin DNI, lista los administradores)"
+    "rem Restablece la contraseña de un administrador de DocuPaz (sin DNI, lista los administradores)"
     "cd /d `"$(Join-Path $Destino 'app\server')`""
     "set /p DNI=DNI del administrador (Enter para ver la lista): "
     "`"$NodeExe`" --env-file-if-exists=.env src\resetAdmin.js %DNI%"
     "pause"
 ) | Set-Content -Path (Join-Path $Destino "Restablecer-admin.bat") -Encoding ASCII
 
-if ($reconfigurar -or -not $tareaAppExiste) {
+if ($reconfigurar -or -not $tareaAppExiste -or $migrarApp) {
     $registrada = $false
     while (-not $registrada) {
         try {
@@ -429,11 +464,12 @@ if ($reconfigurar -or -not $tareaAppExiste) {
 
 # --- 9. Firewall y arranque ---
 Write-Paso "Abriendo el puerto 4000 en el Firewall de Windows"
-if (-not (Get-NetFirewallRule -DisplayName "NeuroRepo" -ErrorAction SilentlyContinue)) {
-    New-NetFirewallRule -DisplayName "NeuroRepo" -Direction Inbound -Protocol TCP -LocalPort 4000 -Action Allow | Out-Null
+Remove-NetFirewallRule -DisplayName "NeuroRepo" -ErrorAction SilentlyContinue  # nombre anterior
+if (-not (Get-NetFirewallRule -DisplayName "DocuPaz" -ErrorAction SilentlyContinue)) {
+    New-NetFirewallRule -DisplayName "DocuPaz" -Direction Inbound -Protocol TCP -LocalPort 4000 -Action Allow | Out-Null
 }
 
-Write-Paso "Arrancando NeuroRepo"
+Write-Paso "Arrancando DocuPaz"
 Start-ScheduledTask -TaskName $TareaApp
 if (-not (Esperar-Url "http://localhost:4000/" 120)) {
     Write-Host "ERROR: la app no responde. Revisa $(Join-Path $Logs 'app.log')." -ForegroundColor Red
@@ -443,11 +479,11 @@ if (-not (Esperar-Url "http://localhost:4000/" 120)) {
 $ips = Get-NetIPAddress -AddressFamily IPv4 -ErrorAction SilentlyContinue |
     Where-Object { $_.IPAddress -notlike "127.*" -and $_.IPAddress -notlike "169.254.*" } | Select-Object -ExpandProperty IPAddress
 Write-Host ""
-Write-Host "NeuroRepo está funcionando." -ForegroundColor Green
+Write-Host "DocuPaz está funcionando." -ForegroundColor Green
 Write-Host "  En este equipo:     http://localhost:4000"
 foreach ($ip in $ips) { Write-Host "  Desde la red local: http://${ip}:4000" }
 Write-Host ""
-Write-Host "Arranca solo con el equipo (servicio NeuroRepoMongo y tareas «$TareaApp» y «$TareaIA»)."
+Write-Host "Arranca solo con el equipo (servicio $Servicio y tareas «$TareaApp» y «$TareaIA»)."
 Write-Host "Registros en $Logs. Para restablecer la contraseña del admin: $(Join-Path $Destino 'Restablecer-admin.bat')."
 if ($usuarioTarea) { Write-Host "Si cambia la contraseña de Windows de $usuarioTarea, vuelve a ejecutar este instalador y elige reconfigurar." -ForegroundColor Yellow }
 Salir 0

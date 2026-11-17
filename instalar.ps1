@@ -1,5 +1,5 @@
 ﻿<#
-  Instalador de NeuroRepo para Windows.
+  Instalador de DocuPaz para Windows.
 
   Qué hace:
     0. Si este script se ejecuta solo (por ejemplo, descargando únicamente Instalar.bat +
@@ -51,18 +51,18 @@ function Descargar-Proyecto {
         return $PSScriptRoot
     }
 
-    Write-Paso "Este instalador se ha ejecutado suelto: hace falta descargar NeuroRepo primero."
-    $porDefecto = Join-Path $env:USERPROFILE "NeuroRepo"
+    Write-Paso "Este instalador se ha ejecutado suelto: hace falta descargar DocuPaz primero."
+    $porDefecto = Join-Path $env:USERPROFILE "DocuPaz"
     $destino = Read-Host "¿En qué carpeta lo instalamos? [$porDefecto]"
     if ([string]::IsNullOrWhiteSpace($destino)) { $destino = $porDefecto }
 
     if (Test-CarpetaProyecto $destino) {
-        Write-Host "Ya hay una copia de NeuroRepo en '$destino'; se reutiliza." -ForegroundColor Green
+        Write-Host "Ya hay una copia de DocuPaz en '$destino'; se reutiliza." -ForegroundColor Green
         return $destino
     }
     if (Test-Path $destino) {
         Write-Host ""
-        Write-Host "La carpeta '$destino' ya existe y no parece una instalación de NeuroRepo." -ForegroundColor Red
+        Write-Host "La carpeta '$destino' ya existe y no parece una instalación de DocuPaz." -ForegroundColor Red
         Write-Host "Elige otra carpeta (o vacía/borra esa) y vuelve a ejecutar el instalador." -ForegroundColor Red
         Read-Host "Pulsa Enter para salir"
         exit 1
@@ -70,7 +70,7 @@ function Descargar-Proyecto {
 
     $git = Get-Command git -ErrorAction SilentlyContinue
     if ($git) {
-        Write-Paso "Descargando NeuroRepo desde GitHub con git..."
+        Write-Paso "Descargando DocuPaz desde GitHub con git..."
         git clone --depth 1 $RepoUrl $destino
         if ($LASTEXITCODE -ne 0 -or -not (Test-CarpetaProyecto $destino)) {
             Write-Host "No se pudo clonar el repositorio." -ForegroundColor Red
@@ -78,9 +78,9 @@ function Descargar-Proyecto {
             exit 1
         }
     } else {
-        Write-Paso "Descargando NeuroRepo desde GitHub (.zip; no hace falta tener git instalado)..."
-        $zip = Join-Path $env:TEMP "NeuroRepo-descarga.zip"
-        $extraido = Join-Path $env:TEMP "NeuroRepo-extraido"
+        Write-Paso "Descargando DocuPaz desde GitHub (.zip; no hace falta tener git instalado)..."
+        $zip = Join-Path $env:TEMP "DocuPaz-descarga.zip"
+        $extraido = Join-Path $env:TEMP "DocuPaz-extraido"
         try {
             Invoke-WebRequest -Uri $RepoZipUrl -OutFile $zip -UseBasicParsing
             if (Test-Path $extraido) { Remove-Item $extraido -Recurse -Force }
@@ -91,7 +91,7 @@ function Descargar-Proyecto {
             Move-Item -Path $carpetaExtraida.FullName -Destination $destino
         } catch {
             Write-Host ""
-            Write-Host "No se pudo descargar/descomprimir NeuroRepo: $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "No se pudo descargar/descomprimir DocuPaz: $($_.Exception.Message)" -ForegroundColor Red
             Read-Host "Pulsa Enter para salir"
             exit 1
         } finally {
@@ -105,7 +105,7 @@ function Descargar-Proyecto {
         }
     }
 
-    Write-Host "NeuroRepo descargado en '$destino'." -ForegroundColor Green
+    Write-Host "DocuPaz descargado en '$destino'." -ForegroundColor Green
     return $destino
 }
 
@@ -275,7 +275,7 @@ if (Test-Path $EnvFile) {
 }
 
 if ($reconfigurar) {
-    Write-Paso "Vamos a configurar NeuroRepo"
+    Write-Paso "Vamos a configurar DocuPaz"
 
     $adminNombre = Read-Host "Nombre del administrador [Administrador]"
     if ([string]::IsNullOrWhiteSpace($adminNombre)) { $adminNombre = "Administrador" }
@@ -349,12 +349,14 @@ if ($reconfigurar) {
 
 # --- 3. Firewall ---
 Write-Paso "Abriendo el puerto 4000 en el Firewall de Windows..."
-if (-not (Get-NetFirewallRule -DisplayName "NeuroRepo" -ErrorAction SilentlyContinue)) {
-    New-NetFirewallRule -DisplayName "NeuroRepo" -Direction Inbound -Protocol TCP -LocalPort 4000 -Action Allow | Out-Null
+# La regla se llamaba "NeuroRepo" (nombre anterior del producto): se sustituye
+Remove-NetFirewallRule -DisplayName "NeuroRepo" -ErrorAction SilentlyContinue
+if (-not (Get-NetFirewallRule -DisplayName "DocuPaz" -ErrorAction SilentlyContinue)) {
+    New-NetFirewallRule -DisplayName "DocuPaz" -Direction Inbound -Protocol TCP -LocalPort 4000 -Action Allow | Out-Null
 }
 
 # --- 4. Levantar el stack ---
-Write-Paso "Construyendo y arrancando NeuroRepo (la primera vez puede tardar varios minutos: descarga el modelo de IA, ~2 GB)..."
+Write-Paso "Construyendo y arrancando DocuPaz (la primera vez puede tardar varios minutos: descarga el modelo de IA, ~2 GB)..."
 Push-Location $RepoRoot
 try {
     $composeFiles = @("-f", "docker-compose.yml", "-f", "docker-compose.local.yml")
@@ -405,9 +407,9 @@ if (-not $ip) { $ip = "localhost" }
 Write-Host ""
 Write-Host "============================================================" -ForegroundColor Green
 if ($listo) {
-    Write-Host " NeuroRepo está funcionando." -ForegroundColor Green
+    Write-Host " DocuPaz está funcionando." -ForegroundColor Green
 } else {
-    Write-Host " NeuroRepo todavía se está terminando de arrancar" -ForegroundColor Yellow
+    Write-Host " DocuPaz todavía se está terminando de arrancar" -ForegroundColor Yellow
     Write-Host " (puede seguir descargando el modelo de IA en segundo plano)." -ForegroundColor Yellow
 }
 Write-Host " Comparte esta dirección con tus compañeros, en la misma red:" -ForegroundColor Green

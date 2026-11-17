@@ -1,4 +1,4 @@
-# Biblioteca de documentos (NeuroRepo)
+# Biblioteca de documentos (DocuPaz)
 
 App MERN tipo gestor documental (parecido a Alfresco Community, con IA) para una carpeta de documentos
 del trabajo. Interfaz tipo ChatGPT (barra lateral + chat centrado) con dos modos: **simple** (busca documentación por
@@ -28,8 +28,9 @@ Nada depende de APIs de pago.
 
 ## Stack
 - `server/` Node 22 + Express 5 + Mongoose 9 (ESM, sin TypeScript).
-- `client/` React 19 + Vite, sin librerías de UI ni de gráficos. CSS plano en `src/index.css`: tema oscuro por defecto y
-  modo claro con `:root[data-theme="light"]`, que redefine los mismos tokens. Ningún color va fijo en
+- `client/` React 19 + Vite, sin librerías de UI ni de gráficos. CSS plano en `src/index.css`: los tokens de `:root` son los del
+  oscuro y `:root[data-theme="light"]` los redefine para el claro, que es el **de por defecto** (el
+  `<script>` de `index.html` pone `data-theme="light"` salvo que el usuario haya elegido el oscuro). Ningún color va fijo en
   las reglas: todo lo que depende del tema es una variable (`--folder`, `--glass`, `--overlay`…). El
   toggle está al pie de `Sidebar.jsx`; `src/theme.js` guarda la preferencia en `localStorage` y un
   `<script>` en `index.html` la aplica antes de pintar (sin parpadeo). El HTML de la vista previa de
@@ -226,6 +227,16 @@ Nada depende de APIs de pago.
   para elegir carpeta, marca las que tienen mensaje propio e indica de cuál hereda una subcarpeta.
 
 ## Decisiones (no revertir sin motivo)
+- **Nombre del producto: DocuPaz** (antes «NeuroRepo»). Se cambió todo lo visible (interfaz, título,
+  licencia, README, instaladores). Se conservan a propósito los identificadores internos, para no romper
+  lo ya instalado: el repositorio de GitHub (`Smith-Develop/NeuroRepo`, del que descarga el instalador),
+  la base de datos `notas-ia`, las claves de `localStorage` (`neurorepo-theme`, `neurorepo.chat.*`,
+  `neurorepo.chatMode`), los volúmenes de Docker y la tarea `NeuroRepoInstalador`. El instalador de
+  Windows sin Docker **migra** lo instalado con el nombre antiguo: tareas «NeuroRepo - App/IA» →
+  «DocuPaz - App/IA», servicio `DocuPazMongo` → `DocuPazMongo` (se borra y se crea con la misma base de
+  datos) y regla de firewall «NeuroRepo» → «DocuPaz»; si existe `C:\NeuroRepo` actualiza ahí, si no
+  instala en `C:\DocuPaz`. Al renombrar una tarea que corre con un usuario, pide su contraseña (Windows
+  no deja leer la guardada).
 - **Licencia propietaria** (`LICENSE`, «todos los derechos reservados», © Smith Grisales). Los dos
   `package.json` son `"private": true` y `"license": "UNLICENSED"` (antes ponía `ISC`, el valor por
   defecto de npm, que es una licencia abierta: no volver a ponerla). El repositorio de GitHub sigue
@@ -286,7 +297,7 @@ y hacer doble clic en `Instalar.bat` (lanza `instalar.ps1`, que se autoeleva a a
 falta).
 - `Descargar-Proyecto` (primer paso, antes de nada de Docker): si `$PSScriptRoot` no contiene ya
   `docker-compose.yml` (es decir, el script se ejecutó suelto, no desde dentro del repo), pregunta en
-  qué carpeta instalarlo (por defecto `%USERPROFILE%\NeuroRepo`) y descarga el proyecto completo desde
+  qué carpeta instalarlo (por defecto `%USERPROFILE%\DocuPaz`) y descarga el proyecto completo desde
   GitHub (`git clone --depth 1` si hay `git` en el PATH; si no, el `.zip` de la rama `main` vía
   `Invoke-WebRequest` + `Expand-Archive`). Si el script YA vive dentro de una carpeta con
   `docker-compose.yml` (lo clonaste entero, o es la copia recién descargada), no descarga nada y la
@@ -342,10 +353,10 @@ falta).
   `docker-desktop-<arq>.exe install --quiet --accept-license --backend=wsl-2`, añade el usuario a
   `docker-users` y ofrece reiniciar. Los binarios no van en git. En PowerShell 5.1 los ejecutables
   externos se llaman con `Sin-Parar` (con `Stop`, redirigir su stderr lanza excepción).
-- **Windows sin Docker** (`windows-nativo/`, se entrega como «NeuroRepo-Windows»): para VMs sin
-  virtualización anidada (Docker Desktop no arranca). `Instalar-NeuroRepo.bat` → `instalar-windows.ps1`
-  copia `app\` (server con `node_modules` + `client\dist`) a `C:\NeuroRepo`, Node 22 portable,
-  `mongod.exe` como servicio `NeuroRepoMongo` (`New-Service … --config mongod.cfg --service`, solo
+- **Windows sin Docker** (`windows-nativo/`, se entrega como «DocuPaz-Windows»): para VMs sin
+  virtualización anidada (Docker Desktop no arranca). `Instalar-DocuPaz.bat` → `instalar-windows.ps1`
+  copia `app\` (server con `node_modules` + `client\dist`) a `C:\DocuPaz`, Node 22 portable,
+  `mongod.exe` como servicio `DocuPazMongo` (`New-Service … --config mongod.cfg --service`, solo
   127.0.0.1, caché 0,5 GB) y la app e IA (Ollama: `ollama-windows-amd64.zip` u `OllamaSetup.exe` que
   aporta el usuario, porque se descarga de GitHub) como tareas programadas al arrancar
   (`iniciar-*.cmd` con bucle de reinicio, `ExecutionTimeLimit` 0). Con biblioteca de red usa la ruta UNC
@@ -354,13 +365,13 @@ falta).
   literal). **OCR**: `componentes\ocr` son los binarios win-64 de conda-forge (tesseract 5.5 + poppler,
   resueltos desde Linux con `py-rattler`; el servidor de Mannheim corta las conexiones desde la nube),
   podados a los 55 ejecutables/DLL que de verdad cargan (comprobado leyendo sus imports con `pefile`) y a
-  los diccionarios spa/eng/osd (~100 MB); van a `C:\NeuroRepo\ocr` y `iniciar-app.cmd` añade al PATH
+  los diccionarios spa/eng/osd (~100 MB); van a `C:\DocuPaz\ocr` y `iniciar-app.cmd` añade al PATH
   `ocr\Library\bin` y `ocr` y fija `TESSDATA_PREFIX`/`FONTCONFIG_FILE`. Poppler es GPL: el paquete
   lleva `ocr\LICENCIAS.txt` con la licencia y el origen de cada componente. `LIBRARY_ROOT` se normaliza con `path.resolve` (en Windows llega
   con barra final o como `\\servidor\recurso`). Solo x64. Los binarios no van en git.
   **Comprueba antes de instalar** y muestra el inventario ([OK]/[--]): Node (misma versión → se omite),
   runtime VC++ (registro), MongoDB (servicio + mismo hash de `mongod.exe` → solo se asegura de que
-  corre), Ollama (`$modoIA`: «propio» en `C:\NeuroRepo\ollama`, «externo» si ya responde el 11434 —se
+  corre), Ollama (`$modoIA`: «propio» en `C:\DocuPaz\ollama`, «externo» si ya responde el 11434 —se
   usa tal cual, sin tarea—, «sistema» si hay un `ollama.exe` instalado aparte, «instalar» o «ninguna»;
   con cualquiera de los tres primeros se salta directamente al modelo) y el modelo (si `/api/tags` ya
   lo tiene, se omite). Solo se para la tarea de la app (para actualizar sus archivos).

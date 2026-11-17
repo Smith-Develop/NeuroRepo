@@ -31,7 +31,7 @@ export default function Login({ onLogin }) {
         <div className="grid-bg" />
         <div className="brand" style={{ padding: 0 }}>
           <Docu size={34} />
-          <span className="name">NeuroRepo<small>Biblioteca documental</small></span>
+          <span className="name">DocuPaz<small>Biblioteca documental</small></span>
         </div>
         <div className="quote">
           <Docu size={72} />

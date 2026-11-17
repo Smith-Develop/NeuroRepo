@@ -53,7 +53,7 @@ export default function Sidebar({ user, view, documentCount, favoriteCount, conv
     <aside className="sidebar" aria-label="Navegación principal">
       <div className="brand">
         <Docu size={32} />
-        <span className="name">NeuroRepo<small>Biblioteca documental</small></span>
+        <span className="name">DocuPaz<small>Biblioteca documental</small></span>
       </div>
       <button type="button" className="newsearch" onClick={onNewSearch}>
         <PlusIcon className="sm" /> <span>Nueva búsqueda</span>

@@ -41,7 +41,7 @@ export default function AboutDialog({ model, onClose }) {
           <div className="about-hero">
             <Docu size={56} />
             <div>
-              <b>NeuroRepo</b>
+              <b>DocuPaz</b>
               <span>Biblioteca documental · versión {version}</span>
             </div>
           </div>
@@ -51,7 +51,7 @@ export default function AboutDialog({ model, onClose }) {
             <dt>Modelo de IA</dt><dd>{model || "—"}{model && <> · <span className={lic.warn ? "warn-text" : undefined}>{lic.text}</span></>}</dd>
           </dl>
           <p className="about-legal">
-            © {year} {AUTHOR}. Todos los derechos reservados. NeuroRepo es software propietario: su uso solo está
+            © {year} {AUTHOR}. Todos los derechos reservados. DocuPaz es software propietario: su uso solo está
             permitido con autorización del autor, y queda prohibido copiarlo, modificarlo o distribuirlo sin su
             permiso por escrito (ver el archivo LICENSE).
           </p>

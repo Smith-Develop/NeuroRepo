@@ -1,4 +1,4 @@
-# NeuroRepo — Biblioteca de documentos con IA
+# DocuPaz — Biblioteca de documentos con IA
 
 > © 2026 Smith Grisales. Todos los derechos reservados. Software propietario: ver [Licencia](#licencia).
 
@@ -91,9 +91,9 @@ el instalador incluido. No hace falta tener ya el proyecto descargado ni saber d
 2. Haz doble clic en `Instalar.bat`.
 
 A partir de ahí el instalador hace todo solo, sin más intervención que responder lo que pregunta:
-- Si todavía no tiene el proyecto al lado (es el caso del paso 1), **descarga NeuroRepo entero desde
+- Si todavía no tiene el proyecto al lado (es el caso del paso 1), **descarga DocuPaz entero desde
   GitHub** él mismo (con `git clone` si hay Git instalado, o un `.zip` si no) en la carpeta que le
-  digas (por defecto `%USERPROFILE%\NeuroRepo`), y continúa la instalación ya desde esa copia.
+  digas (por defecto `%USERPROFILE%\DocuPaz`), y continúa la instalación ya desde esa copia.
 - Comprueba si hace falta Docker Desktop (lo instala solo si no está, reiniciando el equipo si es
   necesario — al volver a iniciar sesión el propio instalador continúa solo donde lo dejó).
 - Pide por pantalla la configuración (nombre/DNI/contraseña del admin, carpeta de documentos, modelo
@@ -214,7 +214,7 @@ Todas tienen un valor por defecto razonable. En Docker, para cambiarlas añádel
 | `OLLAMA_TIMEOUT_MS` | 300000 | Tiempo máximo de espera a la IA |
 
 ## Licencia
-NeuroRepo es **software propietario** de Smith Grisales: © 2026, todos los derechos reservados. Solo
+DocuPaz es **software propietario** de Smith Grisales: © 2026, todos los derechos reservados. Solo
 pueden instalarlo y usarlo las personas u organizaciones a las que el autor lo haya autorizado, y está
 prohibido copiarlo, modificarlo o distribuirlo sin su permiso por escrito. Que el código esté visible en
 GitHub no da ningún permiso de uso. Texto completo en [`LICENSE`](LICENSE); para pedir una autorización:

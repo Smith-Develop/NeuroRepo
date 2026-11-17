@@ -1,5 +1,5 @@
 ﻿<#
-    Pre-instalación de NeuroRepo SIN internet: deja el equipo listo con WSL2 y Docker Desktop para
+    Pre-instalación de DocuPaz SIN internet: deja el equipo listo con WSL2 y Docker Desktop para
     después lanzar el instalador de la app (Instalar.bat).
 
     Se ejecuta con Preinstalar.bat desde la carpeta Pre-instalacion, que debe contener:
@@ -30,7 +30,7 @@ if (-not $esAdmin) {
 }
 if (-not $UsuarioOriginal) { $UsuarioOriginal = "$env:USERDOMAIN\$env:USERNAME" }
 Set-Location $PSScriptRoot
-Write-Host "Pre-instalación de NeuroRepo: WSL2 + Docker Desktop (sin internet)" -ForegroundColor Green
+Write-Host "Pre-instalación de DocuPaz: WSL2 + Docker Desktop (sin internet)" -ForegroundColor Green
 
 # --- 1. Arquitectura ---
 $cpuInfo = Get-CimInstance Win32_Processor | Select-Object -First 1
@@ -165,7 +165,7 @@ Write-Host ""
 Write-Host "Pre-instalación terminada." -ForegroundColor Green
 Write-Host "Siguiente paso: tras reiniciar, abre Docker Desktop (la primera vez puede pedir aceptar o"
 Write-Host "saltar el inicio de sesión: elige saltar) y cuando ponga «Engine running», ejecuta el"
-Write-Host "Instalar.bat de NeuroRepo."
+Write-Host "Instalar.bat de DocuPaz."
 if ($reiniciar) {
     Write-Host ""
     Write-Host "Hace falta REINICIAR el equipo para terminar de activar WSL2 y Docker." -ForegroundColor Yellow

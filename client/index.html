@@ -4,10 +4,13 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Biblioteca de documentos</title>
+    <title>DocuPaz · Biblioteca de documentos</title>
     <script>
-      // tema guardado (ver src/theme.js), aplicado antes de pintar para que no haya un parpadeo oscuro
-      try { if (localStorage.getItem("neurorepo-theme") === "light") document.documentElement.dataset.theme = "light"; } catch {}
+      // tema (ver src/theme.js): claro por defecto, salvo que el usuario haya elegido el oscuro. Se aplica
+      // antes de pintar para que no haya parpadeo.
+      var t = null;
+      try { t = localStorage.getItem("neurorepo-theme"); } catch (e) {}
+      if (t !== "dark") document.documentElement.dataset.theme = "light";
     </script>
   </head>
   <body>

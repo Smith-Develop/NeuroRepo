@@ -1,7 +1,7 @@
 PRE-INSTALACIÓN DE NEUROREPO (sin internet): WSL2 + Docker Desktop
 ==================================================================
 
-Deja el equipo listo para después ejecutar el Instalar.bat de NeuroRepo.
+Deja el equipo listo para después ejecutar el Instalar.bat de DocuPaz.
 
 1. Copia esta carpeta "Pre-instalacion" al equipo (por ejemplo en el Escritorio).
 2. Mete los instaladores en su sitio:
@@ -15,12 +15,12 @@ Deja el equipo listo para después ejecutar el Instalar.bat de NeuroRepo.
    - Instala WSL y Docker Desktop sin ventanas, y te da permiso para usar Docker (grupo docker-users).
    - Al final ofrece reiniciar (hace falta).
 4. Después de reiniciar: abre Docker Desktop, salta el inicio de sesión si lo pide y espera a que
-   ponga "Engine running". Entonces ejecuta el Instalar.bat de NeuroRepo.
+   ponga "Engine running". Entonces ejecuta el Instalar.bat de DocuPaz.
 
 Requisitos: Windows 10 22H2 o Windows 11, usuario administrador y la virtualización activada en la
 BIOS/UEFI (Intel VT-x / AMD-V). Si el script avisa de que está desactivada, hay que activarla (en
 equipos de empresa, pedírselo a IT).
 
-Nota: en un equipo SIN acceso a Docker Hub, NeuroRepo necesita además las imágenes node:22-alpine,
+Nota: en un equipo SIN acceso a Docker Hub, DocuPaz necesita además las imágenes node:22-alpine,
 mongo:7 y ollama/ollama (en un .tar cargado con "docker load"). Si el equipo sí llega a Docker Hub,
 el instalador de la app las descarga solo.

@@ -1,5 +1,7 @@
-// Tema claro/oscuro: preferencia de cada navegador (localStorage). El oscuro es el de siempre; el claro
-// se activa con data-theme="light" en <html>. index.html lo aplica antes de pintar para que no parpadee.
+// Tema claro/oscuro: preferencia de cada navegador (localStorage). El claro es el de por defecto y se
+// activa con data-theme="light" en <html>; sin el atributo, los tokens de :root son los del oscuro.
+// index.html lo aplica antes de pintar para que no parpadee. La clave conserva el nombre antiguo
+// del producto para respetar la elección de quien ya eligiera el oscuro.
 const KEY = "neurorepo-theme";
 
 export function getTheme() {

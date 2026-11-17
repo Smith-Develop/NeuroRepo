@@ -1,10 +1,10 @@
 ﻿<#
-    Carga el modelo de IA en NeuroRepo SIN internet (para redes donde Ollama no puede descargarlo).
+    Carga el modelo de IA en DocuPaz SIN internet (para redes donde Ollama no puede descargarlo).
 
     1. En un equipo con internet, descarga el archivo del modelo (unos 1,1 GB):
        https://huggingface.co/Qwen/Qwen2.5-1.5B-Instruct-GGUF/resolve/main/qwen2.5-1.5b-instruct-q4_k_m.gguf
     2. Cópialo a esta carpeta (la del proyecto, junto a este script).
-    3. Con NeuroRepo arrancado, haz doble clic en Cargar-modelo.bat.
+    3. Con DocuPaz arrancado, haz doble clic en Cargar-modelo.bat.
 
     El modelo se registra en Ollama con el nombre de OLLAMA_MODEL del .env (por defecto qwen2.5:1.5b),
     que es el que usa la app; queda guardado en el volumen de Ollama y no hay que repetirlo.
@@ -27,7 +27,7 @@ if (Test-Path ".env") {
 
 $contenedor = docker ps -q --filter "label=com.docker.compose.service=ollama" | Select-Object -First 1
 if (-not $contenedor) {
-    Write-Host "El contenedor de Ollama no está en marcha. Arranca NeuroRepo (Instalar.bat) y vuelve a probar." -ForegroundColor Red
+    Write-Host "El contenedor de Ollama no está en marcha. Arranca DocuPaz (Instalar.bat) y vuelve a probar." -ForegroundColor Red
     exit 1
 }
 
