@@ -2,6 +2,7 @@ import { useContext, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "./api";
 import { toast } from "./toast";
 import { AppContext } from "./appContext";
+import { Select, Combobox, LegoInput } from "./pickers";
 import {
   BookIcon, HomeIcon, ChevronRightIcon, UploadIcon, DownloadIcon, HistoryIcon, LockIcon, PlusIcon, SearchIcon,
   TrashIcon, XIcon, RestoreIcon, FolderIcon, ListIcon, InfoIcon,
@@ -76,7 +77,7 @@ const toForm = (e = {}) => ({
   app: splitCat(e.category)[0],
   sub: splitCat(e.category)[1],
   title: e.title || "",
-  keywords: (e.keywords || []).join(", "),
+  keywords: [...(e.keywords || [])],
   content: e.content || "",
   fields: { ...(e.fields || {}) },
   grupos: (e.fields?.grupos || []).join("\n"),
@@ -93,7 +94,7 @@ function fromForm(f) {
     type: f.type,
     category: joinCat(f.app, f.sub),
     title: f.title.trim(),
-    keywords: f.keywords.split(",").map((k) => k.trim()).filter(Boolean),
+    keywords: f.keywords,
     content: f.content,
     fields,
     adminOnly: f.type === "acceso" || f.adminOnly,
@@ -146,6 +147,17 @@ export default function GuideEditor() {
       .sort((a, b) => a[0].localeCompare(b[0], "es", { sensitivity: "base" }))
       .map(([app, subs]) => [app, [...subs].sort((a, b) => subOrder(a[0]) - subOrder(b[0]) || a[0].localeCompare(b[0], "es"))]);
   }, [shown]);
+  // Palabras clave que ya existen, las más usadas primero (sugerencias del formulario y de sinónimos)
+  const keywordPool = useMemo(() => {
+    const m = new Map();
+    for (const e of entries) for (const k of e.keywords || []) {
+      const key = norm(k);
+      const cur = m.get(key) || { value: k, count: 0 };
+      cur.count++;
+      m.set(key, cur);
+    }
+    return [...m.values()].sort((a, b) => b.count - a.count || a.value.localeCompare(b.value, "es"));
+  }, [entries]);
   const apps = useMemo(() => [...new Set(entries.map((e) => splitCat(e.category)[0]).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" })), [entries]);
   const lastEdit = useMemo(() => entries.reduce((a, e) => (!a || new Date(e.updatedAt) > new Date(a.updatedAt) ? e : a), null), [entries]);
 
@@ -204,14 +216,10 @@ export default function GuideEditor() {
       {error && <p className="error" role="alert">{error}</p>}
       <div className="toolbar">
         <div className="input-icon" style={{ width: 260 }}><SearchIcon size={15} /><input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar fichas…" aria-label="Buscar fichas" /></div>
-        <select className="select" style={{ width: "auto", maxWidth: 260 }} value={cat} onChange={(e) => setCat(e.target.value)} aria-label="Aplicación o área">
-          <option value="">Todas las aplicaciones</option>
-          {apps.map((c) => <option key={c} value={c}>{c}</option>)}
-        </select>
-        <select className="select" style={{ width: "auto" }} value={type} onChange={(e) => setType(e.target.value)} aria-label="Tipo">
-          <option value="">Todos los tipos</option>
-          {Object.entries(TYPES).filter(([k]) => isAdmin || k !== "acceso").map(([k, t]) => <option key={k} value={k}>{t.label}</option>)}
-        </select>
+        <Select style={{ width: 230 }} value={cat} onChange={setCat} ariaLabel="Aplicación o área"
+          options={[{ value: "", label: "Todas las aplicaciones" }, ...apps.map((c) => ({ value: c, label: c }))]} />
+        <Select style={{ width: 200 }} value={type} onChange={setType} ariaLabel="Tipo"
+          options={[{ value: "", label: "Todos los tipos" }, ...Object.entries(TYPES).filter(([k]) => isAdmin || k !== "acceso").map(([k, t]) => ({ value: k, label: t.label }))]} />
         <span className="grow" />
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPanel("synonyms")}><ListIcon size={14} />Sinónimos</button>
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPanel("deleted")}><RestoreIcon size={14} />Borradas</button>
@@ -244,19 +252,19 @@ export default function GuideEditor() {
       ))}
 
       {editing && (
-        <EntryDialog key={editing.entry._id || "nueva"} entry={editing.entry} categories={data?.categories || []} isAdmin={isAdmin}
+        <EntryDialog key={editing.entry._id || "nueva"} entry={editing.entry} categories={data?.categories || []} isAdmin={isAdmin} keywordPool={keywordPool}
           onClose={() => setEditing(null)}
           onOpen={(id) => { const e = entries.find((x) => x._id === id); if (e) setEditing({ entry: e }); }}
           onSaved={async (saved, created) => { await load(); setEditing(null); toast(created ? "Ficha creada" : "Ficha guardada"); }} />
       )}
-      {panel === "synonyms" && <SynonymsDialog onClose={() => setPanel(null)} />}
+      {panel === "synonyms" && <SynonymsDialog onClose={() => setPanel(null)} keywordPool={keywordPool} />}
       {panel === "deleted" && <DeletedDialog onClose={() => setPanel(null)} onRestored={load} />}
     </div></div>
   );
 }
 
 // Formulario de una ficha: campos según el tipo, avisos de duplicados mientras se escribe e historial
-function EntryDialog({ entry, categories, isAdmin, onClose, onOpen, onSaved }) {
+function EntryDialog({ entry, categories, isAdmin, keywordPool, onClose, onOpen, onSaved }) {
   const isNew = !entry._id;
   const initial = useMemo(() => toForm(entry), [entry]);
   const [f, setF] = useState(initial);
@@ -349,13 +357,12 @@ function EntryDialog({ entry, categories, isAdmin, onClose, onOpen, onSaved }) {
           <div className="guide-grid">
             <div className="field">
               <label htmlFor="ficCat">Aplicación o área</label>
-              <input className="input" id="ficCat" list="ficCats" maxLength={70} value={f.app} onChange={(e) => set({ app: e.target.value })} placeholder="HCIS, Correo, Red…" />
-              <datalist id="ficCats">{[...new Set(categories.map((c) => splitCat(c)[0]))].map((c) => <option key={c} value={c} />)}</datalist>
+              <Combobox id="ficCat" maxLength={70} value={f.app} onChange={(v) => set({ app: v })} placeholder="HCIS, Correo, Red…"
+                options={[...new Set(categories.map((c) => splitCat(c)[0]).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" }))} />
             </div>
             <div className="field">
               <label htmlFor="ficSub">Subcategoría</label>
-              <input className="input" id="ficSub" list="ficSubs" maxLength={28} value={f.sub} onChange={(e) => set({ sub: e.target.value })} placeholder="Alta, Incidencias, Acceso…" />
-              <datalist id="ficSubs">{SUBCATEGORIES.map((c) => <option key={c} value={c} />)}</datalist>
+              <Combobox id="ficSub" maxLength={28} value={f.sub} onChange={(v) => set({ sub: v })} placeholder="Alta, Incidencias, Acceso…" options={SUBCATEGORIES} />
             </div>
             <div className="field span2">
               <label htmlFor="ficTitle">Título</label>
@@ -433,8 +440,9 @@ function EntryDialog({ entry, categories, isAdmin, onClose, onOpen, onSaved }) {
 
           <div className="guide-grid">
             <div className="field">
-              <label htmlFor="ficKw">Palabras clave <span className="help">(separadas por comas)</span></label>
-              <input className="input" id="ficKw" value={f.keywords} onChange={(e) => set({ keywords: e.target.value })} placeholder="Otras formas de preguntarlo: vpn, teletrabajo…" />
+              <label htmlFor="ficKw">Palabras clave <span className="help">(Intro o coma para añadir)</span></label>
+              <LegoInput id="ficKw" value={f.keywords} onChange={(v) => set({ keywords: v })} suggestions={keywordPool} ariaLabel="Palabras clave"
+                placeholder="Otras formas de preguntarlo: vpn, teletrabajo…" />
             </div>
             {isAdmin && (
               <div className="field">
@@ -461,23 +469,53 @@ function EntryDialog({ entry, categories, isAdmin, onClose, onOpen, onSaved }) {
 }
 
 // Sinónimos de la búsqueda: un grupo de términos equivalentes por línea
-function SynonymsDialog({ onClose }) {
-  const [text, setText] = useState(null);
+// Sinónimos como grupos de bloques: cada grupo son palabras equivalentes para la búsqueda. Se
+// guardan con el mismo formato de texto de siempre (un grupo por línea, separado por comas; las
+// líneas con # son comentarios y se conservan arriba).
+function parseGroups(text) {
+  const comments = [];
+  const groups = [];
+  for (const line of (text || "").split("\n")) {
+    if (line.trim().startsWith("#")) comments.push(line);
+    else if (line.trim()) groups.push(line.split(/[,;]/).map((t) => t.trim()).filter(Boolean));
+  }
+  return { comments, groups };
+}
+const toText = (comments, groups) => [...comments, ...groups.filter((g) => g.length).map((g) => g.join(", "))].join("\n");
+
+function SynonymsDialog({ onClose, keywordPool }) {
+  const [state, setState] = useState(null); // {comments, groups}
   const [saved, setSaved] = useState("");
   const [meta, setMeta] = useState(null);
+  const [asText, setAsText] = useState(false);
+  const [text, setText] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    api.synonyms().then((s) => { setText(s.text); setSaved(s.text); setMeta(s); }).catch((e) => setError(e.message));
+    api.synonyms().then((s) => { const p = parseGroups(s.text); setState(p); setSaved(toText(p.comments, p.groups)); setMeta(s); }).catch((e) => setError(e.message));
   }, []);
-  const dirty = text !== null && text !== saved;
-  const groups = (text || "").split("\n").filter((l) => !l.trim().startsWith("#") && l.split(",").filter((t) => t.trim()).length >= 2).length;
+  const current = state ? (asText ? text : toText(state.comments, state.groups)) : "";
+  const dirty = state !== null && current !== saved;
+  const valid = state ? state.groups.filter((g) => g.length >= 2).length : 0;
+  // Sugerencias: palabras clave de las fichas y términos ya usados en otros grupos
+  const pool = useMemo(() => {
+    const seen = new Map(keywordPool.map((k) => [norm(k.value), k]));
+    for (const g of state?.groups || []) for (const t of g) if (!seen.has(norm(t))) seen.set(norm(t), { value: t, count: 1 });
+    return [...seen.values()];
+  }, [keywordPool, state]);
+
+  const setGroup = (i, g) => setState((s) => ({ ...s, groups: s.groups.map((x, j) => (j === i ? g : x)) }));
+  const switchMode = () => {
+    if (asText) setState(parseGroups(text));
+    else setText(toText(state.comments, state.groups));
+    setAsText(!asText);
+  };
 
   async function save() {
     setBusy(true);
     try {
-      const s = await api.saveSynonyms(text);
-      setSaved(s.text);
+      const s = await api.saveSynonyms(current);
+      setSaved(current);
       setMeta(s);
       toast("Sinónimos guardados");
       onClose();
@@ -490,22 +528,35 @@ function SynonymsDialog({ onClose }) {
       <div className="dialog wide">
         <div className="dlg-head">
           <div className="tt"><h3 id="synT">Sinónimos</h3><p>Palabras que significan lo mismo para la búsqueda (guía y documentos).</p></div>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={switchMode} disabled={!state}>{asText ? "Ver como bloques" : "Editar como texto"}</button>
           <button type="button" className="btn-icon" onClick={close} aria-label="Cerrar"><XIcon /></button>
         </div>
         <div className="dlg-body">
           <p className="help" style={{ margin: 0 }}>
-            Un grupo por línea, separado por comas: quien pregunte por cualquiera de ellas encontrará también las demás.
-            Ejemplo: <code>vpn, forticlient, acceso remoto, teletrabajo</code>. Las líneas que empiezan por <code>#</code> son comentarios.
+            Cada grupo junta palabras equivalentes: quien pregunte por cualquiera de ellas encontrará también las demás
+            (por ejemplo <b>vpn</b> · <b>forticlient</b> · <b>acceso remoto</b>). Un grupo necesita al menos dos palabras.
             Las erratas («imprsora», «centarlita») se corrigen solas, no hace falta ponerlas aquí.
           </p>
-          {text !== null && (
+          {state && asText && (
             <textarea className="textarea mono guide-text" style={{ minHeight: "40vh" }} spellCheck={false} value={text} onChange={(e) => setText(e.target.value)}
-              aria-label="Sinónimos" placeholder={"vpn, forticlient, acceso remoto\ncorreo, owa, outlook, webmail\nimpresora, fotocopiadora, canon"} />
+              aria-label="Sinónimos como texto" placeholder={"vpn, forticlient, acceso remoto\ncorreo, owa, outlook, webmail"} />
+          )}
+          {state && !asText && (
+            <div className="syn-groups">
+              {state.groups.length === 0 && <p className="help">Todavía no hay grupos de sinónimos.</p>}
+              {state.groups.map((g, i) => (
+                <div key={i} className={`syn-group${g.length === 1 ? " incomplete" : ""}`}>
+                  <LegoInput value={g} onChange={(v) => setGroup(i, v)} suggestions={pool} ariaLabel={`Grupo de sinónimos ${i + 1}`} placeholder="Escribe una palabra y pulsa Intro" max={30} />
+                  <button type="button" className="btn-icon sm" onClick={() => setState((s) => ({ ...s, groups: s.groups.filter((_, j) => j !== i) }))} aria-label={`Borrar el grupo ${i + 1}`} title="Borrar grupo"><TrashIcon size={14} /></button>
+                </div>
+              ))}
+              <button type="button" className="btn btn-secondary btn-sm" style={{ alignSelf: "flex-start" }} onClick={() => setState((s) => ({ ...s, groups: [...s.groups, []] }))}><PlusIcon size={13} />Nuevo grupo</button>
+            </div>
           )}
           {error && <p className="error" role="alert">{error}</p>}
         </div>
         <div className="dlg-foot">
-          <span className="help">{groups} grupo{groups === 1 ? "" : "s"}{meta?.updatedAt ? ` · ${fecha(meta.updatedAt)} · ${meta.updatedBy}` : ""}</span>
+          <span className="help">{valid} grupo{valid === 1 ? "" : "s"}{meta?.updatedAt ? ` · ${fecha(meta.updatedAt)} · ${meta.updatedBy}` : ""}</span>
           <span className="grow" />
           <button type="button" className="btn btn-ghost" onClick={close}>Cancelar</button>
           <button type="button" className="btn btn-primary" onClick={save} disabled={busy || !dirty}>Guardar</button>

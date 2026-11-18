@@ -425,6 +425,7 @@ button.ft-pick.on { color: var(--text); background: var(--accent-soft); }
 .dialog { width: min(520px, 100%); max-height: min(86vh, 760px); display: flex; flex-direction: column; background: var(--surface-2); border: 1px solid var(--border-2); border-radius: var(--r-xl); box-shadow: var(--sh-3); animation: pop .22s var(--ease); }
 @keyframes pop { from { opacity: 0; transform: translateY(10px) scale(.98); } }
 .dialog.wide { width: min(860px, 100%); height: min(88vh, 900px); }
+.dialog.wide .dlg-body { flex: 1; }
 .dlg-head { display: flex; align-items: flex-start; gap: 12px; padding: 18px 20px 14px; border-bottom: 1px solid var(--border); }
 .dlg-head .tt { flex: 1; min-width: 0; }
 .dlg-head h3 { margin: 0; font-size: 16px; font-weight: 600; letter-spacing: -.01em; }
@@ -643,3 +644,49 @@ mark { background: var(--warn-soft); color: inherit; border-radius: 3px; padding
   .guide-steps li .textarea { width: 100%; }
   .guide-step-acts { margin: 4px 0 0; }
 }
+
+/* Desplegables propios (pickers.jsx): misma pinta que el resto de la app, no la lista nativa */
+.pick-btn { display: inline-flex; align-items: center; gap: 8px; text-align: left; background-image: none; padding-right: 10px; color: var(--text); }
+.pick-btn .pick-value { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pick-btn svg { color: var(--text-3); flex: none; }
+.pick-btn[aria-expanded="true"] { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.pick-combo { position: relative; }
+.pick-combo .input { padding-right: 34px; }
+.pick-toggle { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 28px; height: 28px; display: grid; place-items: center; border-radius: 6px; color: var(--text-3); }
+.pick-toggle:hover { color: var(--text); background: var(--surface-3); }
+.pick-list { position: fixed; z-index: 120; margin: 0; padding: 5px; list-style: none; overflow-y: auto; border-radius: 12px; background: var(--surface-3); border: 1px solid var(--border-2); box-shadow: var(--sh-3); animation: pop .12s var(--ease); }
+.pick-list li { display: flex; align-items: center; gap: 8px; min-height: 32px; padding: 6px 10px; border-radius: 7px; font-size: 13px; color: var(--text-2); cursor: pointer; }
+.pick-list li:hover, .pick-list li.on { background: var(--surface-4); color: var(--text); }
+.pick-list li[aria-selected="true"] { color: var(--accent-text); font-weight: 500; }
+.pick-list li svg { color: var(--accent-2); flex: none; }
+.pick-list .pick-label { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.pick-list .pick-hint { font-size: 11px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.pick-list .pick-empty { cursor: default; color: var(--text-3); font-style: italic; }
+.pick-list .pick-empty:hover { background: none; color: var(--text-3); }
+
+/* Palabras como bloques de lego encajados (palabras clave y sinónimos) */
+.lego-field { min-height: 44px; padding: 10px 10px 6px; border-radius: var(--r-sm); background: var(--surface); border: 1px solid var(--border-2); cursor: text; transition: border-color .15s, box-shadow .15s; }
+.lego-field:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.legos { display: flex; flex-wrap: wrap; align-items: center; row-gap: 10px; }
+.lego {
+  --lg: var(--accent-soft); --lg-line: var(--accent-line); --lg-text: var(--accent-text);
+  position: relative; display: inline-flex; align-items: center; gap: 4px; height: 26px; padding: 0 6px 0 11px; margin-right: -1px;
+  font-size: 12.5px; font-weight: 500; color: var(--lg-text); background: var(--lg); border: 1px solid var(--lg-line); border-radius: 3px;
+}
+/* los «tetones» de encima de cada bloque */
+.lego::before { content: ""; position: absolute; top: -5px; left: 7px; width: 9px; height: 4px; border-radius: 3px 3px 0 0; background: var(--lg-line); box-shadow: 13px 0 0 var(--lg-line); }
+/* encaje con el bloque siguiente */
+.lego::after { content: ""; position: absolute; right: -4px; top: 50%; width: 6px; height: 10px; margin-top: -5px; border-radius: 0 5px 5px 0; background: var(--lg-line); z-index: 1; }
+.lego:last-of-type::after { display: none; }
+.lego.c1 { --lg: var(--ok-soft); --lg-line: color-mix(in srgb, var(--ok) 45%, transparent); --lg-text: var(--ok); }
+.lego.c2 { --lg: color-mix(in srgb, var(--info) 14%, transparent); --lg-line: color-mix(in srgb, var(--info) 45%, transparent); --lg-text: var(--info); }
+.lego.c3 { --lg: var(--warn-soft); --lg-line: color-mix(in srgb, var(--warn) 45%, transparent); --lg-text: var(--warn); }
+.lego-x { width: 18px; height: 18px; display: grid; place-items: center; border-radius: 4px; color: inherit; opacity: .65; }
+.lego-x:hover { opacity: 1; background: var(--lg-line); }
+.lego-input { flex: 1; min-width: 140px; height: 26px; margin-left: 8px; border: 0; outline: 0; background: none; font-size: 13px; color: var(--text); }
+.lego-input::placeholder { color: var(--text-3); }
+.syn-groups { display: flex; flex-direction: column; gap: 10px; }
+.syn-group { display: flex; align-items: flex-start; gap: 8px; }
+.syn-group .lego-field { flex: 1; }
+.syn-group.incomplete .lego-field { border-color: var(--warn); }
+.syn-group > .btn-icon { margin-top: 8px; }

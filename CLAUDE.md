@@ -246,6 +246,12 @@ Nada depende de APIs de pago.
   (alfabético) y subcategoría; el filtro es por aplicación. En el `.txt` va tal cual en la cabecera
   («HCIS / Incidencias · No imprime»). «Importar .txt» de un admin pregunta si **sustituir** toda la guía
   (`POST /guide/import {text, replace: true}`): las fichas actuales pasan a «Borradas» (recuperables).
+  Los desplegables del formulario y de los filtros son `client/src/pickers.jsx` (no `<select>`/`<datalist>`
+  nativos): `Select`, `Combobox` (texto libre + sugerencias) y `LegoInput` (palabras como bloques
+  encajados, con sugerencias de las ya existentes ordenadas por uso; Intro/coma/Tab añaden, Retroceso
+  quita la última). La lista se pinta en `<body>` con `position: fixed` (si no, el scroll del diálogo la
+  recorta). Palabras clave y sinónimos usan `LegoInput`; los sinónimos se editan como grupos de bloques
+  (o «Editar como texto») y se guardan con el formato de siempre, conservando las líneas `#`.
   `client/src/GuideCard.jsx` – la ficha en el chat (categoría, tipo, título; plegada si es larga).
   `client/src/highlight.jsx` – `<Highlight text terms>`: marca con `<mark>` las palabras que empiezan
   por los términos de `highlight` (en `GuideCard` y en el párrafo de `DocumentCard`). `AnswerText`
