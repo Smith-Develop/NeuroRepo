@@ -83,14 +83,25 @@ Nada depende de APIs de pago.
   instalan en el `Dockerfile` (`apk add`, con reintentos porque el DNS de Docker Desktop falla a veces).
   Si no están (desarrollo) o `OCR_ENABLED=false`, el OCR queda desactivado y lo dice en el log.
   `GET /library` devuelve `ocr`, `ocrPending` y `ocrFailed`, que se muestran en «Vincular biblioteca».
-- `server/src/search.js` – `searchDocuments(query)`: `$text` de Mongo + `rerank` (coincidencia de palabras
-  distintas de la consulta, raíz de 5 letras sin tildes, igual criterio que el buscador anterior de notas).
-  `rerank` ordena primero por esas coincidencias, así que las palabras de relleno («todo», «documento»,
-  «información»…) van en `STOP`: si contaran, «Necesito todo lo de Servolab» ponía primero un documento
-  que solo decía «todos los talleres» (pasó con datos reales).
+- `server/src/search.js` – `searchDocuments(query, limit, lexicon)`: `$text` de Mongo + `rerank`. La
+  pregunta se convierte en **conceptos** (`queryConcepts`): cada palabra con contenido (raíz de 5 letras
+  sin tildes; las de 3 letras —VPN, SMS— solo como palabra entera, `SHORT_STOP` quita «que», «con»…) con
+  sus alternativas: los **sinónimos** (`parseSynonyms`, un grupo por línea separado por comas) y las
+  **erratas** corregidas (`editDistance` ≤1, ≤2 si la palabra tiene 8 letras o más, contra el vocabulario
+  de `lexicon.js`; solo palabras que no están en él, y si su raíz ya es conocida solo se completa la
+  palabra para `$text`). Un concepto cuenta si aparece cualquiera de sus alternativas; las palabras
+  completas añadidas (`expand`) se suman a la consulta `$text`. `rerank` cuenta conceptos y los del
+  nombre/carpeta pesan el doble. `excerpt` = `bestSnippet`: el párrafo (o frase) con más conceptos,
+  ampliado hasta ~300 caracteres, que el cliente muestra con las palabras resaltadas (`highlightTerms`).
+  Las palabras de relleno («todo», «documento», «desde»…) van en `STOP`: si contaran, «Necesito todo lo
+  de Servolab» ponía primero un documento que solo decía «todos los talleres» (pasó con datos reales).
   **Importante**: la puntuación (`score: {$meta:"textScore"}`) va en la MISMA llamada a `.find()`/proyección
   que el resto de campos — encadenar un `.select()` aparte la pisa y `score` llega `undefined` (bug real que
   apareció al construirlo; dejarlo documentado para no repetirlo).
+- `server/src/lexicon.js` – `getLexicon()` → `{synonyms, vocab}`: los sinónimos (`SearchSettings`
+  singleton, los editan admins y editores de la guía) y el vocabulario para corregir erratas (palabras de
+  la guía, de los nombres de archivo y carpetas y de los sinónimos; NO del texto de los documentos, que
+  sería mucho). Caché de 10 min, invalidada al guardar fichas o sinónimos.
 - `server/src/ai.js` – `chat()` común contra `/api/chat` (temperatura 0). `suggestKeywords(question)`:
   convierte la pregunta en palabras clave para reintentar la búsqueda (modo simple).
   `answerFromDocuments(question, sources)` (modo avanzado): responde SOLO con los fragmentos dados,
@@ -100,15 +111,24 @@ Nada depende de APIs de pago.
   (`search.js`): trozos de 600 caracteres con más raíces de la pregunta, hasta 3500 del primer documento
   y 1200 del segundo (antes eran 4 documentos de 1500: el modelo pequeño los mezclaba y citaba mal). Con el modelo de 1,5B las
   respuestas son rápidas (~5 s en CPU) pero a veces imprecisas: la UI avisa de comprobarlas.
-- `server/src/guide.js` – **Guía rápida**: apuntes cortos que mantienen los admins y que el chat
-  consulta ANTES que la biblioteca, en los dos modos. Vive en Mongo (`Guide` singleton con `version`,
-  `GuideVersion` con las 20 anteriores), no en la biblioteca, así que no sale en «Documentos». Es un
-  único texto (como el `.txt` que tenían): `parseGuide` lo trocea por líneas de guiones/«=» (5 o más);
-  título = primera línea con letras; una entrada que empieza por `[solo admin]` solo la reciben los
-  admins (la guía real tenía contraseñas). `searchGuide` puntúa con las raíces de `stemsOf` (×2), las
-  del título y las palabras enteras; las siglas de 3 letras (VPN, SMS, APM; `SHORT_STOP` quita «que», «con»…) cuentan solo como palabra entera, porque `stemsOf` descarta lo de menos de 4 letras; exige la mitad de las raíces y la 2.ª entrada debe sacar ≥75 % de
-  la 1.ª. Caché en memoria del troceado, invalidada al guardar. `saveGuide` rechaza con 409 si otro
-  admin guardó entretanto (control de versión). Tests en `server/test/guide.test.js`.
+- `server/src/guide.js` – **Guía rápida** en **fichas** (`GuideEntry {type, category, title, keywords,
+  content, fields, adminOnly, version, createdBy, updatedBy}`), que el chat consulta ANTES que la
+  biblioteca, en los dos modos. Vive en Mongo, no en la biblioteca (no sale en «Documentos»). Tipos:
+  `nota` (texto libre), `aplicacion` (acceso permitido a, dirección, cómo se tramita el alta, cómo se
+  pide, quién lo solicita, grupos del directorio activo, observaciones), `procedimiento` (introducción +
+  pasos), `contacto` (nombre, extensión/móvil, correo) y `acceso` (credenciales: **siempre** solo admin).
+  Antes era un único texto (`Guide`): `migrateLegacyGuide` lo trocea en fichas una vez (marca
+  `migratedAt`; el texto se queda como copia). El mismo formato sirve para **importar/exportar .txt**
+  (`parseGuideText`/`exportText`, ida y vuelta sin pérdidas, comprobado con la guía real de 91 fichas):
+  bloques separados por líneas de guiones/«=»; primera línea «Categoría · Título»; `[solo admin]` delante;
+  «Palabras clave: …»; las líneas «Etiqueta: valor» conocidas (`FIELD_LABELS`, con alias) pasan a los
+  campos; pasos numerados al final → procedimiento. `renderBody` da el texto de la ficha (chat, búsqueda,
+  exportación). Duplicados: misma categoría+título (`titleKey`) se rechaza con 409; `checkDuplicates`
+  avisa de títulos parecidos y de grupos AD o direcciones ya usados en otras fichas. Historial por ficha
+  (`GuideEntryHistory`, las 20 últimas versiones y los borrados, que se pueden recuperar).
+  `searchGuide` usa los conceptos de `search.js`: aciertos ×2, los de título/categoría/palabras clave ×2
+  más, palabras enteras +1; exige la mitad de los conceptos y la 2.ª ficha debe sacar ≥75 % de la 1.ª.
+  Caché en memoria, invalidada en cada cambio. Tests en `server/test/guide.test.js`.
 - `server/src/routes.js` – API bajo `/api`:
   - `GET /documents?q=` (cualquier logueado) → búsqueda con `excerpt` por documento; `?name=&type=`
     (pdf/doc/xls/other) → filtro por nombre o carpeta (regex escapada) y tipo, como mucho 200
@@ -132,8 +152,13 @@ Nada depende de APIs de pago.
     («¿y si falla?»).
   - `GET /documents/:id/text` → `{text}`: el texto extraído, para la vista previa de lo que no tiene
     visor propio (`.doc`, `.rtf`, `.pptx`, `.odt`, scripts, logs…).
-  - `GET /guide`, `PUT /guide {text, version}` (409 si cambió), `GET /guide/versions`,
-    `GET /guide/versions/:id` (admin): editor de la guía. Máximo `GUIDE_MAX_CHARS` (400 000).
+  - Guía (`requireGuideEditor`: admin o `User.canEditGuide`; los que no son admin no ven ni tocan
+    fichas «solo admin»/acceso): `GET /guide/entries` → `{entries, categories, types}`;
+    `POST /guide/entries {entry}`; `PUT /guide/entries/:id {entry, version}` (409 si otro la cambió o si
+    duplica otra); `DELETE /guide/entries/:id`; `GET /guide/entries/:id/history`; `GET /guide/deleted`,
+    `POST /guide/deleted/:hid/restore`; `POST /guide/check {entry, id}` (avisos de duplicados, no
+    guarda); `POST /guide/import {text}` (crea las que no existan) y `GET /guide/export` (texto);
+    `GET/PUT /guide/synonyms`. `/ask` devuelve además `highlight` (términos a resaltar).
   - `GET /favorites`, `PUT /favorites/:id`, `DELETE /favorites/:id` (cualquier logueado) → favoritos del
     propio usuario (`User.favorites`, como mucho 300). Añadir comprueba permiso (`findAccessibleDoc`) y
     el listado vuelve a filtrar con `canSeeFolder` (por si el grupo cambió); el más reciente, primero.
@@ -165,7 +190,7 @@ Nada depende de APIs de pago.
   folders: [String]}` (rutas de carpeta de cualquier profundidad, relativas a la biblioteca activa; no
   referencias), `FolderConfig {folder,
   blockedMessage}`, `AppConfig` (documento único con la biblioteca activa y el estado del último escaneo),
-  `User {name, dni, passwordHash?, role, group, favorites: [Document]}` (`passwordHash` solo lo tiene el admin), `Session`
+  `User {name, dni, passwordHash?, role, group, favorites: [Document], canEditGuide}` (`passwordHash` solo lo tiene el admin), `Session`
   (índice TTL, igual que antes).
 - `server/src/auth.js` – permisos por ruta: cada ruta del grupo incluye sus subcarpetas
   (`canSeeFolder`: igual a la ruta o empieza por `ruta + "/"`, así «Cal» no da acceso a «Calidad»);
@@ -207,11 +232,15 @@ Nada depende de APIs de pago.
   conversaciones `{id, title, scope, messages, updatedAt}`), con evento propio para que `Sidebar.jsx`
   (sección «Historial», borrar con la ×) se actualice. Todo en try/catch: sin almacenamiento, el chat
   funciona igual. No sale del navegador (en otro PC no aparece).
-- `client/src/GuideEditor.jsx` (admin, «Guía rápida» en la barra lateral) – el texto entero en un
-  `textarea` con contadores (entradas, solo admin), importar `.txt` (decodifica UTF-8 o, si no lo es,
-  Windows-1252), descargar `.txt` (UTF-8 con BOM y CRLF, para el Bloc de notas), versiones anteriores
-  («Cargar en el editor») y aviso de cambios sin guardar. `client/src/GuideCard.jsx` – la entrada en el
-  chat (encima de los documentos; plegada si es larga). `AnswerText` resalta `[Guía]`.
+- `client/src/GuideEditor.jsx` («Guía rápida» en la barra lateral: admins y usuarios con permiso) –
+  constructor de fichas: lista por categoría con buscador y filtros, `EntryDialog` con los campos del tipo
+  elegido, avisos de duplicados mientras se escribe (`/guide/check`, bloquea guardar si el título ya
+  existe en la categoría), visibilidad Todos/Solo admin, historial («Cargar en el formulario»), importar
+  `.txt` (UTF-8 o Windows-1252), exportar `.txt` (UTF-8 con BOM y CRLF), «Sinónimos» y «Borradas».
+  `client/src/GuideCard.jsx` – la ficha en el chat (categoría, tipo, título; plegada si es larga).
+  `client/src/highlight.jsx` – `<Highlight text terms>`: marca con `<mark>` las palabras que empiezan
+  por los términos de `highlight` (en `GuideCard` y en el párrafo de `DocumentCard`). `AnswerText`
+  resalta `[Guía]`.
 - `client/src/Favorites.jsx` – vista «Favoritos»: los favoritos viven en `App.jsx` (cargados de
   `/favorites`) y se comparten por `AppContext {favorites, favoriteIds, toggleFavorite}`; la estrella de
   `DocumentCard` los cambia con actualización optimista.
@@ -240,7 +269,8 @@ Nada depende de APIs de pago.
   admin; el admin puede abrir el modal de cualquier archivo, tenga vista previa o no).
 - `client/src/Login.jsx` – un único campo DNI; si el servidor responde `needsPassword`, aparece el segundo
   campo de contraseña (solo le pasa al admin).
-- `client/src/Users.jsx` – alta nombre+DNI, botón «Importar .txt» (lee el archivo con `FileReader` en el
+- `client/src/Users.jsx` – menú de cada usuario: «Permitir editar la guía rápida» (`canEditGuide`, insignia
+  «Edita la guía»; `PATCH /users/:id {canEditGuide}`). Alta nombre+DNI, botón «Importar .txt» (lee el archivo con `FileReader` en el
   navegador y manda el texto tal cual, sin subida multipart). `client/src/Groups.jsx` – `FolderTree`
   plegable (solo pinta los hijos de lo abierto: hay cientos de carpetas a varios niveles). En el diálogo
   del grupo, marcar una carpeta marca —deshabilitadas— sus subcarpetas y quita las que ya estuvieran

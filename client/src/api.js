@@ -21,10 +21,23 @@ export const api = {
   summary: () => req("/documents/summary"),
   children: (folder) => req(`/documents/children?folder=${encodeURIComponent(folder)}`),
   ask: (question, mode = "simple", scope = "", history = []) => req("/ask", { method: "POST", body: { question, mode, scope, history } }),
-  guide: () => req("/guide"),
-  saveGuide: (text, version) => req("/guide", { method: "PUT", body: { text, version } }),
-  guideVersions: () => req("/guide/versions"),
-  guideVersion: (id) => req(`/guide/versions/${id}`),
+  guideEntries: () => req("/guide/entries"),
+  createGuideEntry: (entry) => req("/guide/entries", { method: "POST", body: { entry } }),
+  updateGuideEntry: (id, entry, version) => req(`/guide/entries/${id}`, { method: "PUT", body: { entry, version } }),
+  deleteGuideEntry: (id) => req(`/guide/entries/${id}`, { method: "DELETE" }),
+  guideEntryHistory: (id) => req(`/guide/entries/${id}/history`),
+  guideDeleted: () => req("/guide/deleted"),
+  restoreGuideEntry: (historyId) => req(`/guide/deleted/${historyId}/restore`, { method: "POST" }),
+  checkGuideEntry: (entry, id) => req("/guide/check", { method: "POST", body: { entry, id } }),
+  importGuide: (text) => req("/guide/import", { method: "POST", body: { text } }),
+  // Texto plano, no JSON
+  exportGuide: async () => {
+    const res = await fetch("/api/guide/export");
+    if (!res.ok) throw new Error(`Error ${res.status}`);
+    return res.text();
+  },
+  synonyms: () => req("/guide/synonyms"),
+  saveSynonyms: (text) => req("/guide/synonyms", { method: "PUT", body: { text } }),
   favorites: () => req("/favorites"),
   addFavorite: (id) => req(`/favorites/${id}`, { method: "PUT" }),
   removeFavorite: (id) => req(`/favorites/${id}`, { method: "DELETE" }),

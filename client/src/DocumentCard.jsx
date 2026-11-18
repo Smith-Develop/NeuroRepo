@@ -3,6 +3,7 @@ import { api } from "./api";
 import DocumentModal from "./DocumentModal";
 import { toast } from "./toast";
 import { AppContext } from "./appContext";
+import { Highlight } from "./highlight";
 import { EyeIcon, FolderIcon, ChevronRightIcon, DownloadIcon, StarIcon } from "./icons";
 
 const LABELS = {
@@ -40,7 +41,7 @@ export function formatDate(ms) {
 // (si la trae la búsqueda) y las acciones de abrir/descargar. Vídeo y audio se reproducen aquí
 // mismo, en la propia fila, tal como pidió el cliente ("que se puedan reproducir desde el chat").
 // `cite`: número con el que la respuesta del modo avanzado cita este documento ([1], [2]...).
-export default function DocumentCard({ doc, score, maxScore, cite }) {
+export default function DocumentCard({ doc, score, maxScore, cite, highlight }) {
   const [open, setOpen] = useState(false);
   const { favoriteIds, toggleFavorite } = useContext(AppContext);
   const isFavorite = favoriteIds?.has(doc._id);
@@ -72,7 +73,7 @@ export default function DocumentCard({ doc, score, maxScore, cite }) {
           ))}
           {" · "}{formatSize(doc.size)}{doc.mtimeMs ? ` · ${formatDate(doc.mtimeMs)}` : ""}
         </div>
-        {doc.excerpt && !isVideo && !isAudio && <div className="snip">{doc.excerpt}</div>}
+        {doc.excerpt && !isVideo && !isAudio && <div className="snip"><Highlight text={doc.excerpt} terms={highlight} /></div>}
         {isVideo && <div className="media"><video controls preload="metadata" src={api.viewUrl(doc._id)} /></div>}
         {isAudio && <div className="media"><audio controls preload="metadata" src={api.viewUrl(doc._id)} /></div>}
       </div>

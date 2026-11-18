@@ -157,11 +157,11 @@ export default function Chat({ user, conversationId, topFolders = [], onOpenDocu
     setBusy(true);
     try {
       const history = mode === "advanced" ? conversationHistory(messages) : [];
-      const { results, blocked, folder: blockedFolder, message, usedAI, answer, sourceCount, aiError, guide } = await api.ask(q, mode, scope === "all" ? "" : scope, history);
+      const { results, blocked, folder: blockedFolder, message, usedAI, answer, sourceCount, aiError, guide, highlight } = await api.ask(q, mode, scope === "all" ? "" : scope, history);
       if (blocked) {
         replace(reply, { kind: "blocked", text: message, folder: blockedFolder });
       } else {
-        replace(reply, { kind: "results", results, usedAI, mode, answer, sourceCount, aiError, guide: guide || [] });
+        replace(reply, { kind: "results", results, usedAI, mode, answer, sourceCount, aiError, guide: guide || [], highlight: highlight || [] });
       }
     } catch (err) {
       replace(reply, { kind: "error", text: err.message });
@@ -244,7 +244,7 @@ export default function Chat({ user, conversationId, topFolders = [], onOpenDocu
                 )}
                 {m.kind === "results" && m.guide?.length > 0 && (
                   <div className="results">
-                    {m.guide.map((g, i) => <GuideCard key={i} entry={g} />)}
+                    {m.guide.map((g, i) => <GuideCard key={i} entry={g} highlight={m.highlight} />)}
                   </div>
                 )}
                 {m.kind === "results" && !m.answer && !(m.guide?.length && !m.results.length && !m.aiError) && (
@@ -261,7 +261,7 @@ export default function Chat({ user, conversationId, topFolders = [], onOpenDocu
                   <div className="results">
                     {visibleResults(m).map((d) => {
                       const i = m.results.indexOf(d);
-                      return <DocumentCard key={d._id} doc={d} score={d.score} maxScore={m.results[0].score || 1} rank={i} cite={m.answer && i < m.sourceCount ? i + 1 : undefined} />;
+                      return <DocumentCard key={d._id} doc={d} score={d.score} maxScore={m.results[0].score || 1} rank={i} cite={m.answer && i < m.sourceCount ? i + 1 : undefined} highlight={m.highlight} />;
                     })}
                   </div>
                 )}

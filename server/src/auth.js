@@ -59,7 +59,7 @@ export async function attachUser(req, _res, next) {
   if (token) {
     const session = await Session.findById(token).populate({
       path: "user",
-      select: "name dni role group",
+      select: "name dni role group canEditGuide",
       populate: { path: "group", select: "folders" },
     });
     if (session && session.expiresAt > new Date()) req.user = session.user;
@@ -104,6 +104,14 @@ export function requireAuth(req, res, next) {
 export function requireAdmin(req, res, next) {
   if (!req.user) return res.status(401).json({ error: "Inicia sesión para continuar." });
   if (req.user.role !== "admin") return res.status(403).json({ error: "Solo el administrador puede hacer esto." });
+  next();
+}
+
+// Fichas de la Guía rápida: los admins y los usuarios a los que un admin se lo haya permitido
+export const canEditGuide = (user) => user?.role === "admin" || Boolean(user?.canEditGuide);
+export function requireGuideEditor(req, res, next) {
+  if (!req.user) return res.status(401).json({ error: "Inicia sesión para continuar." });
+  if (!canEditGuide(req.user)) return res.status(403).json({ error: "No tienes permiso para editar la guía rápida." });
   next();
 }
 

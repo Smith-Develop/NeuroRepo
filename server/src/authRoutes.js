@@ -7,7 +7,7 @@ import { logActivity } from "./activityLog.js";
 const r = Router();
 const wrap = (fn) => (req, res, next) => fn(req, res).catch(next);
 const text = (v, max = Infinity) => (typeof v === "string" ? v.trim().slice(0, max) : "");
-const publicUser = (u) => ({ _id: u._id, name: u.name, dni: u.dni, role: u.role });
+const publicUser = (u) => ({ _id: u._id, name: u.name, dni: u.dni, role: u.role, canEditGuide: u.role === "admin" || Boolean(u.canEditGuide) });
 const countAdmins = (excludeId) => User.countDocuments({ role: "admin", ...(excludeId ? { _id: { $ne: excludeId } } : {}) });
 
 // Los usuarios normales entran solo con su DNI; el admin necesita además su contraseña.
@@ -73,7 +73,7 @@ r.post("/users", requireAdmin, wrap(async (req, res) => {
 }));
 
 r.get("/users", requireAdmin, wrap(async (req, res) => {
-  res.json(await User.find({}, "name dni role group createdAt").sort({ createdAt: 1 }).populate("group", "name").lean());
+  res.json(await User.find({}, "name dni role group canEditGuide createdAt").sort({ createdAt: 1 }).populate("group", "name").lean());
 }));
 
 r.patch("/users/:id", requireAdmin, wrap(async (req, res) => {
@@ -84,6 +84,8 @@ r.patch("/users/:id", requireAdmin, wrap(async (req, res) => {
   if (text(req.body?.name, 120)) user.name = text(req.body.name, 120);
   if (req.body?.group === null) user.group = null;
   else if (mongoose.isValidObjectId(req.body?.group)) user.group = req.body.group;
+
+  if (typeof req.body?.canEditGuide === "boolean") user.canEditGuide = req.body.canEditGuide;
 
   if (req.body?.role === "user" && user.role === "admin") {
     if ((await countAdmins(user._id)) < 1) return res.status(400).json({ error: "Debe quedar al menos un admin." });
@@ -102,7 +104,7 @@ r.patch("/users/:id", requireAdmin, wrap(async (req, res) => {
   await user.save();
   await user.populate("group", "name");
   await logActivity(req, "user.update", `${user.name} (${user.dni})`);
-  res.json({ _id: user._id, name: user.name, dni: user.dni, role: user.role, group: user.group });
+  res.json({ _id: user._id, name: user.name, dni: user.dni, role: user.role, group: user.group, canEditGuide: user.canEditGuide });
 }));
 
 r.delete("/users/:id", requireAdmin, wrap(async (req, res) => {

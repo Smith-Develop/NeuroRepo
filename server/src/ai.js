@@ -63,7 +63,7 @@ export function suggestKeywords(question) {
 // history: [{q, a}] turnos anteriores de la conversación (modo avanzado), del más antiguo al último.
 // guide: [{title, body}] apuntes de la Guía rápida que coinciden con la pregunta (van primero)
 export function answerFromDocuments(question, sources, history = [], guide = []) {
-  const guideText = guide.map((g) => `[Guía] ${g.title}\n${g.body.slice(0, 2000)}`).join("\n\n");
+  const guideText = guide.map((g) => `[Guía] ${g.category ? `${g.category} · ` : ""}${g.title}\n${g.body.slice(0, 2000)}`).join("\n\n");
   const docsText = sources.map((s, i) => `[${i + 1}] ${s.folder ? `${s.folder}/` : ""}${s.filename}\n${s.text}`).join("\n\n");
   const context = [guideText && `Guía rápida:\n\n${guideText}`, docsText && `Fragmentos de documentos:\n\n${docsText}`].filter(Boolean).join("\n\n");
   return chat([

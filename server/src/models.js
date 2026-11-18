@@ -58,6 +58,8 @@ const userSchema = new mongoose.Schema(
     group: { type: mongoose.Schema.Types.ObjectId, ref: "Group", default: null },
     // Documentos marcados como favoritos desde el chat (se filtran por permisos al listarlos)
     favorites: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: "Document" }], default: [] },
+    // Permiso que da un admin a usuarios concretos para crear y editar fichas de la Guía rápida
+    canEditGuide: { type: Boolean, default: false },
   },
   { timestamps: true },
 );
@@ -117,9 +119,39 @@ const guideSchema = new mongoose.Schema({
   version: { type: Number, default: 0 },
   updatedAt: { type: Date, default: null },
   updatedBy: { type: String, default: "" },
+  migratedAt: { type: Date, default: null }, // cuando el texto se pasó a fichas (GuideEntry)
 });
 const guideVersionSchema = new mongoose.Schema({ text: String, savedAt: Date, savedBy: String });
 guideVersionSchema.index({ savedAt: -1 });
+
+// Fichas de la Guía rápida (guide.js): sustituyen al texto único de `Guide`, que se migra solo.
+// `fields` depende del tipo (aplicación, procedimiento, contacto, acceso o nota libre).
+const guideEntrySchema = new mongoose.Schema(
+  {
+    type: { type: String, enum: ["nota", "aplicacion", "procedimiento", "contacto", "acceso"], default: "nota" },
+    category: { type: String, default: "", trim: true },
+    title: { type: String, required: true, trim: true },
+    keywords: { type: [String], default: [] },
+    content: { type: String, default: "" },
+    fields: { type: mongoose.Schema.Types.Mixed, default: {} },
+    adminOnly: { type: Boolean, default: false },
+    version: { type: Number, default: 1 },
+    createdBy: { type: String, default: "" },
+    updatedBy: { type: String, default: "" },
+  },
+  { timestamps: true, minimize: false },
+);
+guideEntrySchema.index({ category: 1, title: 1 });
+// Copia de cada ficha antes de cada cambio o borrado (historial por ficha)
+const guideEntryHistorySchema = new mongoose.Schema({
+  entryId: { type: mongoose.Schema.Types.ObjectId, index: true },
+  snapshot: { type: mongoose.Schema.Types.Mixed },
+  action: { type: String, enum: ["edit", "delete"], default: "edit" },
+  savedAt: { type: Date, default: Date.now },
+  savedBy: { type: String, default: "" },
+});
+// Ajustes de búsqueda que mantienen los admins y editores: la lista de sinónimos
+const searchSettingsSchema = new mongoose.Schema({ _id: { type: String }, synonyms: { type: String, default: "" }, updatedBy: String, updatedAt: Date });
 
 export const Document = mongoose.model("Document", documentSchema);
 export const FileVersion = mongoose.model("FileVersion", fileVersionSchema);
@@ -132,3 +164,6 @@ export const Session = mongoose.model("Session", sessionSchema);
 export const ActivityLog = mongoose.model("ActivityLog", activityLogSchema);
 export const Guide = mongoose.model("Guide", guideSchema);
 export const GuideVersion = mongoose.model("GuideVersion", guideVersionSchema);
+export const GuideEntry = mongoose.model("GuideEntry", guideEntrySchema);
+export const GuideEntryHistory = mongoose.model("GuideEntryHistory", guideEntryHistorySchema);
+export const SearchSettings = mongoose.model("SearchSettings", searchSettingsSchema);

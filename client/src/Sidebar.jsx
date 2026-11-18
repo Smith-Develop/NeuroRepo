@@ -62,7 +62,7 @@ export default function Sidebar({ user, view, documentCount, favoriteCount, conv
       <div className="nav-scroll">
         <div className="nav-label">Buscar</div>
         <ul className="nav">
-          {ITEMS.map(({ id, label, Icon }) => (
+          {(!isAdmin && user.canEditGuide ? [...ITEMS, { id: "guia", label: "Guía rápida", Icon: BookIcon }] : ITEMS).map(({ id, label, Icon }) => (
             <li key={id}>
               <button type="button" className={view === id ? "on" : ""} onClick={() => onNavigate(id)}>
                 <Icon /> <span>{label}</span>

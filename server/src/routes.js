@@ -4,10 +4,14 @@ import multer from "multer";
 import mammoth from "mammoth";
 import * as XLSX from "xlsx";
 import { readFileSync } from "node:fs";
-import { Document, FolderConfig, FileVersion, TrashItem, Group, User, GuideVersion } from "./models.js";
-import { requireAdmin, canSeeFolder, folderFilter, folderAncestors } from "./auth.js";
-import { searchDocuments, topScore, bestPassages, stemsOf } from "./search.js";
-import { guideEntries, searchGuide, getGuide, saveGuide, GUIDE_MAX_CHARS } from "./guide.js";
+import { Document, FolderConfig, FileVersion, TrashItem, Group, User, GuideEntry, GuideEntryHistory } from "./models.js";
+import { requireAdmin, requireGuideEditor, canSeeFolder, folderFilter, folderAncestors } from "./auth.js";
+import { searchDocuments, topScore, bestPassages, stemsOf, queryConcepts, highlightTerms } from "./search.js";
+import {
+  guideEntries, searchGuide, allEntries, invalidateGuide, sanitizeEntry, checkDuplicates, titleKey, snapshot, parseGuideText,
+  exportText, migrateLegacyGuide, DEFAULT_CATEGORIES, TYPES, GUIDE_MAX_CHARS,
+} from "./guide.js";
+import { getLexicon, getSynonymsText, saveSynonyms, invalidateLexicon, SYNONYMS_MAX_CHARS } from "./lexicon.js";
 import { suggestKeywords, answerFromDocuments, MODEL } from "./ai.js";
 import {
   safeResolve, browseFolder, getActiveLibraryPath, setActiveLibraryPath, getAppConfig, LibraryPathError, LIBRARY_ROOT,
@@ -106,14 +110,14 @@ r.post("/ask", wrap(async (req, res) => {
 
   // 1) Guía rápida, antes que la biblioteca y sin IA (las entradas [solo admin], solo para admins)
   const isAdmin = req.user.role === "admin";
-  const entries = await guideEntries();
-  let guide = searchGuide(entries, question, { isAdmin });
-  if (!guide.length && history.length) guide = searchGuide(entries, `${history.at(-1).q} ${question}`, { isAdmin });
+  const [entries, lexicon] = await Promise.all([guideEntries(), getLexicon()]);
+  let guide = searchGuide(entries, question, { isAdmin, lexicon });
+  if (!guide.length && history.length) guide = searchGuide(entries, `${history.at(-1).q} ${question}`, { isAdmin, lexicon });
 
   // 2) Biblioteca. Si la mejor coincidencia es de una carpeta sin permiso y la guía no responde, el
   // mensaje de carpeta bloqueada; si la guía sí responde, se sigue (los documentos sin permiso se
   // quitan igualmente más abajo).
-  let found = await searchDocuments(question);
+  let found = await searchDocuments(question, 30, lexicon);
   if (!guide.length && found.length && !canSeeFolder(req.user, found[0].folder)) {
     const folder = found[0].folder;
     await logActivity(req, "search.blocked", `${folder}: ${question}`);
@@ -125,7 +129,7 @@ r.post("/ask", wrap(async (req, res) => {
   // junto con la pregunta anterior
   let searchQuery = question;
   if (history.length && (!found.length || topScore(found) < AI_FALLBACK_SCORE)) {
-    const withContext = await searchDocuments(`${history.at(-1).q} ${question}`);
+    const withContext = await searchDocuments(`${history.at(-1).q} ${question}`, 30, lexicon);
     if (withContext.length && topScore(withContext) > topScore(found)) {
       found = withContext;
       searchQuery = `${history.at(-1).q} ${question}`;
@@ -139,7 +143,7 @@ r.post("/ask", wrap(async (req, res) => {
     try {
       const keywords = await suggestKeywords(question);
       if (keywords) {
-        const retry = await searchDocuments(keywords);
+        const retry = await searchDocuments(keywords, 30, lexicon);
         if (retry.length) { found = retry; usedAI = true; }
       }
     } catch {
@@ -149,7 +153,9 @@ r.post("/ask", wrap(async (req, res) => {
 
   found = found.filter((d) => canSeeFolder(req.user, d.folder) && (!scope || d.topFolder === scope));
   const results = found.slice(0, 10);
-  if (!advanced || (!results.length && !guide.length)) return res.json({ results, usedAI, guide });
+  // Términos que el cliente resalta en el párrafo de cada documento y en la guía
+  const highlight = highlightTerms(queryConcepts(searchQuery, lexicon));
+  if (!advanced || (!results.length && !guide.length)) return res.json({ results, usedAI, guide, highlight });
 
   // Con respuesta en la guía basta un documento de apoyo: menos texto, menos mezclas del modelo
   const sourcesDocs = results.slice(0, guide.length ? 1 : ANSWER_SOURCES);
@@ -163,42 +169,185 @@ r.post("/ask", wrap(async (req, res) => {
     // El modelo pequeño a veces numera la guía como si fuera un documento: una cita [n] sin documento
     // n detrás se convierte en [Guía]
     if (guide.length) answer = answer.replace(/\[(\d+)\]/g, (m, n) => (Number(n) > sources.length ? "[Guía]" : m));
-    res.json({ results, usedAI, guide, answer, sourceCount: sources.length });
+    res.json({ results, usedAI, guide, highlight, answer, sourceCount: sources.length });
   } catch (e) {
     // Sin IA disponible: se devuelven igualmente la guía y los documentos, con el motivo
-    res.json({ results, usedAI, guide, aiError: e.message || "La IA no está disponible." });
+    res.json({ results, usedAI, guide, highlight, aiError: e.message || "La IA no está disponible." });
   }
 }));
 
-// Guía rápida (admin): el texto entero, como un .txt, con control de versión y las anteriores
-r.get("/guide", requireAdmin, wrap(async (req, res) => {
-  const g = await getGuide();
-  const entries = await guideEntries();
-  res.json({ text: g.text || "", version: g.version || 0, updatedAt: g.updatedAt, updatedBy: g.updatedBy || "",
-    entries: entries.length, adminOnly: entries.filter((e) => e.adminOnly).length });
+// Guía rápida: fichas que editan los admins y los usuarios con permiso (canEditGuide). Los que no
+// son admin no ven ni tocan las fichas «solo admin» (ni las de tipo acceso, que siempre lo son).
+const isAdminReq = (req) => req.user.role === "admin";
+const guideChanged = () => { invalidateGuide(); invalidateLexicon(); };
+const entryOut = (e) => ({ ...e, version: e.version || 1 });
+
+async function loadEntry(req, res) {
+  if (!mongoose.isValidObjectId(req.params.id)) { res.status(404).end(); return null; }
+  const e = await GuideEntry.findById(req.params.id).lean();
+  if (!e || (e.adminOnly && !isAdminReq(req))) { res.status(404).json({ error: "Esa ficha ya no existe." }); return null; }
+  return e;
+}
+// Ficha del formulario validada, o responde con el error (y devuelve null)
+function entryFromBody(req, res) {
+  const entry = sanitizeEntry(req.body?.entry);
+  if (entry.error) { res.status(400).json({ error: entry.error }); return null; }
+  if (entry.adminOnly && !isAdminReq(req)) { res.status(403).json({ error: "Solo un administrador puede crear o editar fichas «solo admin» y de accesos." }); return null; }
+  return entry;
+}
+// Misma categoría y mismo título que otra ficha: no se guarda
+async function duplicateOf(entry, exceptId) {
+  const key = titleKey(entry);
+  return (await GuideEntry.find(exceptId ? { _id: { $ne: exceptId } } : {}, "title category adminOnly").lean()).find((o) => titleKey(o) === key);
+}
+const duplicateError = (res, dup, req) =>
+  res.status(409).json({
+    error: dup.adminOnly && !isAdminReq(req)
+      ? "Ya existe una ficha con ese título en esa categoría (es «solo admin»)."
+      : `Ya existe la ficha «${dup.category ? `${dup.category} · ` : ""}${dup.title}». Edítala en lugar de crear otra.`,
+    duplicateId: dup.adminOnly && !isAdminReq(req) ? undefined : dup._id,
+  });
+
+r.get("/guide/entries", requireGuideEditor, wrap(async (req, res) => {
+  const entries = await allEntries({ isAdmin: isAdminReq(req) });
+  const categories = [...new Set([...entries.map((e) => e.category).filter(Boolean), ...DEFAULT_CATEGORIES])];
+  res.json({ entries: entries.map(entryOut), categories, types: TYPES });
 }));
 
-r.put("/guide", requireAdmin, wrap(async (req, res) => {
-  const textValue = typeof req.body?.text === "string" ? req.body.text.replace(/\r\n?/g, "\n") : null;
-  const version = Number(req.body?.version);
-  if (textValue === null || !Number.isInteger(version)) return res.status(400).json({ error: "Falta el texto de la guía." });
-  if (textValue.length > GUIDE_MAX_CHARS) return res.status(413).json({ error: `La guía no puede pasar de ${GUIDE_MAX_CHARS.toLocaleString("es-ES")} caracteres.` });
-  const { conflict, current, saved } = await saveGuide(textValue, version, req.user);
-  if (conflict) return res.status(409).json({ error: `Otro administrador (${current.updatedBy || "?"}) la cambió mientras la editabas. Recarga para ver su versión.`, version: current.version });
-  await logActivity(req, "guide.update", `${textValue.length} caracteres`);
-  res.json({ version: saved.version, updatedAt: saved.updatedAt, updatedBy: saved.updatedBy });
+// Avisos de duplicados mientras se rellena el formulario (no guarda nada)
+r.post("/guide/check", requireGuideEditor, wrap(async (req, res) => {
+  const entry = sanitizeEntry({ ...req.body?.entry, title: req.body?.entry?.title || "-" });
+  const id = mongoose.isValidObjectId(req.body?.id) ? String(req.body.id) : null;
+  const others = (await allEntries({ isAdmin: isAdminReq(req) })).filter((o) => String(o._id) !== id);
+  res.json(checkDuplicates(entry, others));
 }));
 
-r.get("/guide/versions", requireAdmin, wrap(async (req, res) => {
-  const versions = await GuideVersion.find({}, "savedAt savedBy text").sort({ savedAt: -1 }).lean();
-  res.json(versions.map((v) => ({ _id: v._id, savedAt: v.savedAt, savedBy: v.savedBy, length: (v.text || "").length })));
+r.post("/guide/entries", requireGuideEditor, wrap(async (req, res) => {
+  const entry = entryFromBody(req, res);
+  if (!entry) return;
+  const dup = await duplicateOf(entry);
+  if (dup) return duplicateError(res, dup, req);
+  const created = await GuideEntry.create({ ...entry, version: 1, createdBy: req.user.name, updatedBy: req.user.name });
+  guideChanged();
+  await logActivity(req, "guide.create", `${entry.category ? `${entry.category} · ` : ""}${entry.title}`);
+  res.status(201).json(entryOut(created.toObject()));
 }));
 
-r.get("/guide/versions/:id", requireAdmin, wrap(async (req, res) => {
-  if (!mongoose.isValidObjectId(req.params.id)) return res.status(404).end();
-  const v = await GuideVersion.findById(req.params.id).lean();
-  if (!v) return res.status(404).end();
-  res.json({ text: v.text || "", savedAt: v.savedAt, savedBy: v.savedBy });
+r.put("/guide/entries/:id", requireGuideEditor, wrap(async (req, res) => {
+  const current = await loadEntry(req, res);
+  if (!current) return;
+  const entry = entryFromBody(req, res);
+  if (!entry) return;
+  if ((current.version || 1) !== Number(req.body?.version)) {
+    return res.status(409).json({ error: `${current.updatedBy || "Otra persona"} cambió esta ficha mientras la editabas. Ciérrala y vuelve a abrirla para ver su versión.`, conflict: true });
+  }
+  const dup = await duplicateOf(entry, current._id);
+  if (dup) return duplicateError(res, dup, req);
+  const saved = await GuideEntry.findOneAndUpdate(
+    { _id: current._id, version: current.version || 1 },
+    { ...entry, version: (current.version || 1) + 1, updatedBy: req.user.name },
+    { new: true },
+  ).lean();
+  if (!saved) return res.status(409).json({ error: "La ficha cambió mientras la guardabas. Vuelve a abrirla.", conflict: true });
+  await snapshot(current, "edit");
+  guideChanged();
+  await logActivity(req, "guide.update", `${entry.category ? `${entry.category} · ` : ""}${entry.title}`);
+  res.json(entryOut(saved));
+}));
+
+r.delete("/guide/entries/:id", requireGuideEditor, wrap(async (req, res) => {
+  const current = await loadEntry(req, res);
+  if (!current) return;
+  await snapshot(current, "delete", req.user.name);
+  await GuideEntry.deleteOne({ _id: current._id });
+  guideChanged();
+  await logActivity(req, "guide.delete", `${current.category ? `${current.category} · ` : ""}${current.title}`);
+  res.status(204).end();
+}));
+
+// Versiones anteriores de una ficha (la más reciente primero)
+r.get("/guide/entries/:id/history", requireGuideEditor, wrap(async (req, res) => {
+  const current = await loadEntry(req, res);
+  if (!current) return;
+  res.json(await GuideEntryHistory.find({ entryId: current._id }).sort({ savedAt: -1 }).lean());
+}));
+
+// Fichas borradas (para recuperarlas): el último borrado de cada una que no se haya vuelto a crear
+r.get("/guide/deleted", requireGuideEditor, wrap(async (req, res) => {
+  const deleted = await GuideEntryHistory.find({ action: "delete" }).sort({ savedAt: -1 }).limit(200).lean();
+  const alive = new Set((await GuideEntry.find({ _id: { $in: deleted.map((d) => d.entryId) } }, "_id").lean()).map((e) => String(e._id)));
+  const seen = new Set();
+  res.json(deleted.filter((d) => {
+    const id = String(d.entryId);
+    if (alive.has(id) || seen.has(id) || (d.snapshot?.adminOnly && !isAdminReq(req))) return false;
+    seen.add(id);
+    return true;
+  }));
+}));
+
+r.post("/guide/deleted/:hid/restore", requireGuideEditor, wrap(async (req, res) => {
+  if (!mongoose.isValidObjectId(req.params.hid)) return res.status(404).end();
+  const h = await GuideEntryHistory.findOne({ _id: req.params.hid, action: "delete" }).lean();
+  if (!h || (h.snapshot?.adminOnly && !isAdminReq(req))) return res.status(404).end();
+  if (await GuideEntry.exists({ _id: h.entryId })) return res.status(409).json({ error: "Esa ficha ya se recuperó." });
+  const entry = sanitizeEntry(h.snapshot);
+  if (entry.error) return res.status(400).json({ error: entry.error });
+  const dup = await duplicateOf(entry);
+  if (dup) return duplicateError(res, dup, req);
+  const restored = await GuideEntry.create({
+    _id: h.entryId, ...entry, version: (h.snapshot.version || 1) + 1,
+    createdBy: h.snapshot.createdBy || "", createdAt: h.snapshot.createdAt, updatedBy: req.user.name,
+  });
+  guideChanged();
+  await logActivity(req, "guide.restore", entry.title);
+  res.status(201).json(entryOut(restored.toObject()));
+}));
+
+// Importar un .txt con el formato de siempre: crea las fichas que no existan (misma categoría y
+// título = ya existe, se salta). Las «solo admin» solo las importa un admin.
+r.post("/guide/import", requireGuideEditor, wrap(async (req, res) => {
+  const raw = typeof req.body?.text === "string" ? req.body.text : "";
+  if (!raw.trim()) return res.status(400).json({ error: "El archivo está vacío." });
+  if (raw.length > GUIDE_MAX_CHARS) return res.status(413).json({ error: `El archivo no puede pasar de ${GUIDE_MAX_CHARS.toLocaleString("es-ES")} caracteres.` });
+  await migrateLegacyGuide();
+  const keys = new Set((await GuideEntry.find({}, "title category").lean()).map(titleKey));
+  const t0 = Date.now();
+  const toCreate = [];
+  let skipped = 0;
+  let forbidden = 0;
+  for (const parsed of parseGuideText(raw)) {
+    const entry = sanitizeEntry(parsed);
+    if (entry.error) { skipped++; continue; }
+    if (entry.adminOnly && !isAdminReq(req)) { forbidden++; continue; }
+    if (keys.has(titleKey(entry))) { skipped++; continue; }
+    keys.add(titleKey(entry));
+    const at = new Date(t0 + toCreate.length);
+    toCreate.push({ ...entry, version: 1, createdBy: req.user.name, updatedBy: req.user.name, createdAt: at, updatedAt: at });
+  }
+  if (toCreate.length) await GuideEntry.insertMany(toCreate, { timestamps: false });
+  guideChanged();
+  await logActivity(req, "guide.import", `${toCreate.length} fichas nuevas, ${skipped} repetidas`);
+  res.json({ created: toCreate.length, skipped, forbidden });
+}));
+
+// Exportar a .txt (el mismo formato que se importa); los que no son admin, sin las «solo admin»
+r.get("/guide/export", requireGuideEditor, wrap(async (req, res) => {
+  res.type("text/plain; charset=utf-8").send(exportText(await allEntries({ isAdmin: isAdminReq(req) })));
+}));
+
+// Sinónimos de la búsqueda (guía y documentos): una línea por grupo de términos equivalentes
+r.get("/guide/synonyms", requireGuideEditor, wrap(async (req, res) => {
+  const s = await getSynonymsText();
+  res.json({ text: s.synonyms || "", updatedBy: s.updatedBy || "", updatedAt: s.updatedAt || null });
+}));
+
+r.put("/guide/synonyms", requireGuideEditor, wrap(async (req, res) => {
+  const value = typeof req.body?.text === "string" ? req.body.text.replace(/\r\n?/g, "\n") : null;
+  if (value === null) return res.status(400).json({ error: "Faltan los sinónimos." });
+  if (value.length > SYNONYMS_MAX_CHARS) return res.status(413).json({ error: "Demasiados sinónimos." });
+  const saved = await saveSynonyms(value, req.user);
+  await logActivity(req, "guide.synonyms", `${value.split("\n").filter((l) => l.includes(",")).length} grupos`);
+  res.json({ text: saved.synonyms, updatedBy: saved.updatedBy, updatedAt: saved.updatedAt });
 }));
 
 // Favoritos del usuario: documentos marcados desde el chat para no tener que volver a buscarlos.

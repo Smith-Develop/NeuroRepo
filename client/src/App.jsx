@@ -106,7 +106,7 @@ export default function App() {
           {view === "usuarios" && user.role === "admin" && <Users currentUser={user} />}
           {view === "grupos" && user.role === "admin" && <Groups />}
           {view === "registro" && user.role === "admin" && <ActivityLog />}
-          {view === "guia" && user.role === "admin" && <GuideEditor />}
+          {view === "guia" && user.canEditGuide && <GuideEditor />}
           {error && <p className="error" role="alert" onClick={() => setError("")}>{error}</p>}
         </section>
       </main>

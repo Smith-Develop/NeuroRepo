@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { toast } from "./toast";
-import { UploadIcon, UserPlusIcon, UsersIcon, ShieldIcon, LockIcon, DotsIcon, TrashIcon, XIcon, HomeIcon, ChevronRightIcon } from "./icons";
+import { UploadIcon, UserPlusIcon, UsersIcon, ShieldIcon, LockIcon, DotsIcon, TrashIcon, XIcon, HomeIcon, ChevronRightIcon, BookIcon } from "./icons";
 
 const COLORS = ["", "c2", "c3", "c4"];
 const initialsOf = (name) => (name || "?").trim().split(/\s+/).map((p) => p[0]).join("").slice(0, 2).toUpperCase();
@@ -66,7 +66,7 @@ function UserDialog({ groups, onClose, onCreated }) {
   );
 }
 
-function UserMenu({ anchorRef, u, onClose, onMakeAdmin, onRemoveAdmin, onDelete }) {
+function UserMenu({ anchorRef, u, onClose, onMakeAdmin, onRemoveAdmin, onToggleGuide, onDelete }) {
   const [pos, setPos] = useState(null);
   useEffect(() => {
     const r = anchorRef.current?.getBoundingClientRect();
@@ -83,6 +83,11 @@ function UserMenu({ anchorRef, u, onClose, onMakeAdmin, onRemoveAdmin, onDelete 
       {u.role === "admin"
         ? <button type="button" onClick={() => { onClose(); onRemoveAdmin(u); }}><ShieldIcon size={14} />Quitar administrador</button>
         : <button type="button" onClick={() => { onClose(); onMakeAdmin(u); }}><ShieldIcon size={14} />Hacer administrador</button>}
+      {u.role !== "admin" && (
+        <button type="button" onClick={() => { onClose(); onToggleGuide(u); }}>
+          <BookIcon size={14} />{u.canEditGuide ? "Quitar permiso de la guía rápida" : "Permitir editar la guía rápida"}
+        </button>
+      )}
       <hr />
       <button type="button" className="danger" onClick={() => { onClose(); onDelete(u); }}><TrashIcon size={14} />Borrar usuario</button>
     </div>
@@ -106,6 +111,20 @@ export default function Users({ currentUser }) {
 
   const load = () => Promise.all([api.users(), api.groups()]).then(([u, g]) => { setItems(u); setGroups(g); }).catch((e) => setError(e.message));
   useEffect(() => { load(); }, []);
+
+  // Permiso para crear y editar fichas de la Guía rápida (los admins ya lo tienen)
+  async function toggleGuide(u) {
+    setBusy(true);
+    try {
+      await api.updateUser(u._id, { canEditGuide: !u.canEditGuide });
+      await load();
+      toast(u.canEditGuide ? `${u.name} ya no puede editar la guía rápida` : `${u.name} ya puede editar la guía rápida`);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
 
   async function changeGroup(u, group) {
     setBusy(true);
@@ -233,7 +252,8 @@ export default function Users({ currentUser }) {
                   </span>
                 </td>
                 <td className="muted hide-sm" style={{ fontVariantNumeric: "tabular-nums" }}>{u.dni}</td>
-                <td>{u.role === "admin" ? <span className="badge accent"><span className="dot" />Admin</span> : <span className="badge"><span className="dot" />Usuario</span>}</td>
+                <td>{u.role === "admin" ? <span className="badge accent"><span className="dot" />Admin</span> : <span className="badge"><span className="dot" />Usuario</span>}
+                  {u.role !== "admin" && u.canEditGuide && <span className="badge ok" style={{ marginLeft: 6 }} title="Puede crear y editar fichas de la guía rápida"><BookIcon size={11} />Edita la guía</span>}</td>
                 <td>
                   {u.role === "admin" ? <span className="badge accent"><ShieldIcon size={12} />Acceso total</span> : (
                     <>
@@ -250,7 +270,7 @@ export default function Users({ currentUser }) {
                     onClick={(e) => { e.stopPropagation(); setMenuFor(menuFor === u._id ? null : u._id); }}><DotsIcon size={15} /></button>
                   {menuFor === u._id && (
                     <UserMenu anchorRef={{ current: rowRefs.current[u._id] }} u={u} onClose={() => setMenuFor(null)}
-                      onMakeAdmin={makeAdmin} onRemoveAdmin={removeAdmin} onDelete={remove} />
+                      onMakeAdmin={makeAdmin} onRemoveAdmin={removeAdmin} onToggleGuide={toggleGuide} onDelete={remove} />
                   )}
                 </td>
               </tr>
