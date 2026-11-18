@@ -227,7 +227,10 @@ Nada depende de APIs de pago.
   archivo es clickable (abre `DocumentModal`) si es `PREVIEWABLE`; vídeo y audio se reproducen **en la
   propia tarjeta** (`<video>`/`<audio controls>`, sin modal) tal como pidió el cliente ("se puedan
   reproducir desde el chat"). En el chat el nombre y el icono del archivo abren la vista previa (igual
-  que en «Documentos»), además del botón «Abrir».
+  que en «Documentos»), además del botón «Abrir». Antes de abrir o descargar, la tarjeta pide el documento actual a
+  `GET /documents/locate?id=&folder=&filename=` (por id o, si ya no existe, por carpeta + nombre): las
+  conversaciones del historial guardan los ids de entonces, que dejan de existir al reindexar o cambiar
+  de biblioteca (daba 404 en `/preview` desde el chat y no desde «Documentos»).
 - `client/src/chatHistory.js` – historial en `localStorage` (`neurorepo.chat.<userId>`, como mucho 40
   conversaciones `{id, title, scope, messages, updatedAt}`), con evento propio para que `Sidebar.jsx`
   (sección «Historial», borrar con la ×) se actualice. Todo en try/catch: sin almacenamiento, el chat

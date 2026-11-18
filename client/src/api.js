@@ -41,6 +41,7 @@ export const api = {
   favorites: () => req("/favorites"),
   addFavorite: (id) => req(`/favorites/${id}`, { method: "PUT" }),
   removeFavorite: (id) => req(`/favorites/${id}`, { method: "DELETE" }),
+  locateDocument: (d) => req(`/documents/locate?${new URLSearchParams({ id: d._id, folder: d.folder || "", filename: d.filename || "" })}`),
   viewUrl: (id) => `/api/documents/${id}/view`,
   downloadUrl: (id) => `/api/documents/${id}/download`,
   preview: (id) => req(`/documents/${id}/preview`),

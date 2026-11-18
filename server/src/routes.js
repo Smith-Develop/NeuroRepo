@@ -394,6 +394,19 @@ async function findAccessibleDoc(req, res) {
   return doc;
 }
 
+// El documento actual de una tarjeta del chat: por id o, si ese id ya no existe (conversación del
+// historial guardada antes de reindexar o de cambiar la biblioteca), por carpeta y nombre
+r.get("/documents/locate", wrap(async (req, res) => {
+  const fields = "filename ext folder topFolder size mtimeMs textOk hasText";
+  let doc = mongoose.isValidObjectId(req.query.id) ? await Document.findById(req.query.id, fields).lean() : null;
+  if (!doc && typeof req.query.filename === "string") {
+    doc = await Document.findOne({ filename: req.query.filename, folder: typeof req.query.folder === "string" ? req.query.folder : "" }, fields).lean();
+  }
+  if (!doc) return res.status(404).json({ error: "Este documento ya no está en la biblioteca (se movió, se renombró o se borró)." });
+  if (!canSeeFolder(req.user, doc.folder)) return res.status(403).json({ error: "No tienes permiso para este documento." });
+  res.json(doc);
+}));
+
 r.get("/documents/:id/view", wrap(async (req, res) => {
   const doc = await findAccessibleDoc(req, res);
   if (!doc) return;

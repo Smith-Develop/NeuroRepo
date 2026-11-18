@@ -41,9 +41,27 @@ export function formatDate(ms) {
 // (si la trae la búsqueda) y las acciones de abrir/descargar. Vídeo y audio se reproducen aquí
 // mismo, en la propia fila, tal como pidió el cliente ("que se puedan reproducir desde el chat").
 // `cite`: número con el que la respuesta del modo avanzado cita este documento ([1], [2]...).
-export default function DocumentCard({ doc, score, maxScore, cite, highlight }) {
+export default function DocumentCard({ doc: saved, score, maxScore, cite, highlight }) {
   const [open, setOpen] = useState(false);
+  // Las conversaciones del historial guardan el id del documento de entonces: si se reindexó o se
+  // cambió la biblioteca, ese id ya no existe. Antes de abrir o descargar se busca el actual.
+  const [doc, setDoc] = useState(saved);
+  const [checked, setChecked] = useState(false);
   const { favoriteIds, toggleFavorite } = useContext(AppContext);
+  async function current() {
+    if (checked) return doc;
+    try {
+      const fresh = await api.locateDocument(doc);
+      const d = { ...doc, ...fresh };
+      setDoc(d);
+      setChecked(true);
+      return d;
+    } catch (e) {
+      toast(e.message);
+      return null;
+    }
+  }
+  async function openPreview() { if (await current()) setOpen(true); }
   const isFavorite = favoriteIds?.has(doc._id);
   const canPreview = canPreviewDoc(doc);
   const isVideo = VIDEO_EXT.has(doc.ext);
@@ -52,17 +70,23 @@ export default function DocumentCard({ doc, score, maxScore, cite, highlight }) 
   const pct = score && maxScore ? Math.max(8, Math.round(100 * score / maxScore)) : null;
   const pathParts = (doc.folder || "").split("/").filter(Boolean);
 
-  function download() { toast(`Descargando ${doc.filename}`); }
+  async function download(e) {
+    e.preventDefault();
+    const d = await current();
+    if (!d) return;
+    toast(`Descargando ${d.filename}`);
+    window.location.href = api.downloadUrl(d._id);
+  }
 
   return (
     <div className="res">
       {canPreview
-        ? <button type="button" className={`ftype ${cls}`} onClick={() => setOpen(true)} title={`Abrir ${doc.filename}`} aria-label={`Abrir ${doc.filename}`}>{label}</button>
+        ? <button type="button" className={`ftype ${cls}`} onClick={openPreview} title={`Abrir ${doc.filename}`} aria-label={`Abrir ${doc.filename}`}>{label}</button>
         : <span className={`ftype ${cls}`}>{label}</span>}
       <div className="info">
         <div className="t" title={doc.filename}>
           {cite && <span className="cite">{cite}</span>}
-          {canPreview ? <button type="button" className="t-link" onClick={() => setOpen(true)}>{doc.filename}</button> : doc.filename}
+          {canPreview ? <button type="button" className="t-link" onClick={openPreview}>{doc.filename}</button> : doc.filename}
         </div>
         <div className="path">
           <FolderIcon size={11} />
@@ -89,7 +113,7 @@ export default function DocumentCard({ doc, score, maxScore, cite, highlight }) 
             </button>
           )}
           <a className="btn-icon sm" href={api.downloadUrl(doc._id)} title="Descargar" aria-label="Descargar" onClick={download}><DownloadIcon size={15} /></a>
-          {canPreview && <button type="button" className="btn btn-primary btn-sm" onClick={() => setOpen(true)}><EyeIcon size={14} />Abrir</button>}
+          {canPreview && <button type="button" className="btn btn-primary btn-sm" onClick={openPreview}><EyeIcon size={14} />Abrir</button>}
         </div>
       </div>
       {open && <DocumentModal doc={doc} onClose={() => setOpen(false)} />}
