@@ -29,19 +29,37 @@ numerados [1], [2], y lo ya hablado en la conversación. Reglas:
 - Si los fragmentos no tienen la respuesta, dilo en una sola frase ("No he encontrado eso en los
   documentos.") sin añadir nada más.`;
 
-async function chat(messages, options = {}) {
+// Las peticiones del chat tienen prioridad sobre los resúmenes en segundo plano (summaries.js): al
+// llegar una, se cancela el resumen en curso (se repetirá después) y la cola espera a que el chat
+// lleve un rato sin usar la IA.
+let lastInteractiveAt = 0;
+let backgroundAbort = null;
+export const msSinceInteractive = () => Date.now() - lastInteractiveAt;
+
+async function chat(messages, options = {}, { background = false, format } = {}) {
   let res;
+  const signals = [AbortSignal.timeout(TIMEOUT_MS)];
+  if (background) {
+    backgroundAbort = new AbortController();
+    signals.push(backgroundAbort.signal);
+  } else {
+    lastInteractiveAt = Date.now();
+    backgroundAbort?.abort();
+  }
   try {
     res = await fetch(`${OLLAMA_URL}/api/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      signal: AbortSignal.timeout(TIMEOUT_MS),
-      body: JSON.stringify({ model: MODEL, stream: false, messages, options: { temperature: 0, num_ctx: 4096, ...options } }),
+      signal: AbortSignal.any(signals),
+      body: JSON.stringify({ model: MODEL, stream: false, messages, ...(format ? { format } : {}), options: { temperature: 0, num_ctx: 4096, ...options } }),
     });
   } catch (e) {
+    if (e.name === "AbortError") throw new AIError("cancelado", { cause: "aborted" });
     throw new AIError(e.name === "TimeoutError"
       ? "La IA local tardó demasiado en responder."
-      : `No se pudo conectar con la IA local (Ollama en ${OLLAMA_URL}).`);
+      : `No se pudo conectar con la IA local (Ollama en ${OLLAMA_URL}).`, { cause: "unreachable" });
+  } finally {
+    if (!background) lastInteractiveAt = Date.now();
   }
   if (!res.ok) {
     const body = await res.text();
@@ -50,6 +68,32 @@ async function chat(messages, options = {}) {
       : `Error de la IA local (${res.status}): ${body.slice(0, 200)}`);
   }
   return ((await res.json()).message?.content ?? "").trim();
+}
+
+// Resumen de un documento para el índice: {summary, keywords}. Solo con el principio del texto (el
+// modelo pequeño no da para más en una CPU) y en JSON, para no tener que adivinar el formato.
+const SUMMARY_SYSTEM = `Eres un archivero del servicio de Informática de un hospital. Te paso el nombre, la
+carpeta y el principio de un documento. Devuelve SOLO un JSON {"resumen": "...", "palabras": ["...", ...]}:
+- "resumen": 1 o 2 frases en español que digan de qué trata y para qué sirve el documento (sin inventar
+  nada que no esté en el texto; sin datos personales, contraseñas ni números de teléfono).
+- "palabras": de 3 a 8 palabras clave en español, en minúsculas: aplicaciones, temas y tareas que trata.`;
+export async function summarizeDocument({ filename, folder, text }) {
+  const content = `Nombre: ${filename}\nCarpeta: ${folder || "(raíz)"}\n\nTexto:\n${text}`;
+  const raw = await chat([{ role: "system", content: SUMMARY_SYSTEM }, { role: "user", content }], { num_predict: 220 }, { background: true, format: "json" });
+  let data;
+  try {
+    data = JSON.parse(raw);
+  } catch {
+    throw new AIError("La IA no devolvió un JSON válido.", { cause: "bad-output" });
+  }
+  const summary = typeof data.resumen === "string" ? data.resumen.replace(/\s+/g, " ").trim().slice(0, 500) : "";
+  const keywords = (Array.isArray(data.palabras) ? data.palabras : [])
+    .filter((k) => typeof k === "string")
+    .map((k) => k.trim().toLowerCase().slice(0, 40))
+    .filter(Boolean)
+    .slice(0, 8);
+  if (!summary) throw new AIError("La IA devolvió un resumen vacío.", { cause: "bad-output" });
+  return { summary, keywords: [...new Set(keywords)] };
 }
 
 export function suggestKeywords(question) {

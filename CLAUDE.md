@@ -83,6 +83,17 @@ Nada depende de APIs de pago.
   instalan en el `Dockerfile` (`apk add`, con reintentos porque el DNS de Docker Desktop falla a veces).
   Si no están (desarrollo) o `OCR_ENABLED=false`, el OCR queda desactivado y lo dice en el log.
   `GET /library` devuelve `ocr`, `ocrPending` y `ocrFailed`, que se muestran en «Vincular biblioteca».
+- `server/src/summaries.js` – **resúmenes con IA** de cada documento (`summary` 1–2 frases +
+  `summaryKeywords`, `summaryStatus` none/pending/done/failed), en segundo plano y de uno en uno como el
+  OCR: el indexador deja «pending» lo nuevo/cambiado con texto (y el OCR, al sacar texto); la cola lee
+  los primeros 2500 caracteres y pide un JSON a Ollama (`summarizeDocument`, `format: "json"`). Prioridad
+  baja: cada petición del chat cancela el resumen en curso (`AbortController` en `ai.js`) y la cola espera
+  `SUMMARY_IDLE_SECONDS` (60) sin uso del chat; si Ollama no responde, para hasta el siguiente escaneo.
+  `SUMMARIES_ENABLED=false` la desactiva. Es un **añadido**: la búsqueda sigue usando el texto completo
+  (el modelo de 1,5B a veces resume mal y un resumen pierde datos concretos). Entran en el índice de
+  texto (`DOCUMENT_TEXT_WEIGHTS`; si cambian, `ensureDocumentTextIndex` en `index.js` rehace el índice
+  al arrancar), en `rerank` pesan como el nombre, se muestran en la tarjeta («De qué trata») y van a la IA
+  en avanzada. `GET /library` devuelve `summariesDone/summariesPending` («Vincular biblioteca»).
 - `server/src/search.js` – `searchDocuments(query, limit, lexicon)`: `$text` de Mongo + `rerank`. La
   pregunta se convierte en **conceptos** (`queryConcepts`): cada palabra con contenido (raíz de 5 letras
   sin tildes; las de 3 letras —VPN, SMS— solo como palabra entera, `SHORT_STOP` quita «que», «con»…) con
@@ -91,7 +102,8 @@ Nada depende de APIs de pago.
   de `lexicon.js`; solo palabras que no están en él, y si su raíz ya es conocida solo se completa la
   palabra para `$text`). Un concepto cuenta si aparece cualquiera de sus alternativas; las palabras
   completas añadidas (`expand`) se suman a la consulta `$text`. `rerank` cuenta conceptos y los del
-  nombre/carpeta pesan el doble. `excerpt` = `bestSnippet`: el párrafo (o frase) con más conceptos,
+  nombre/carpeta/resumen pesan el doble; cada resultado lleva `matched`/`conceptCount` e `isRelevant`
+  exige la mitad de los conceptos (`/ask` descarta los demás: antes salían siempre 10 documentos). `excerpt` = `bestSnippet`: el párrafo (o frase) con más conceptos,
   ampliado hasta ~300 caracteres, que el cliente muestra con las palabras resaltadas (`highlightTerms`).
   Las palabras de relleno («todo», «documento», «desde»…) van en `STOP`: si contaran, «Necesito todo lo
   de Servolab» ponía primero un documento que solo decía «todos los talleres» (pasó con datos reales).
@@ -206,7 +218,8 @@ Nada depende de APIs de pago.
 - `server/src/resetAdmin.js` – recuperación de contraseña sin email: `docker compose exec app node
   src/resetAdmin.js <DNI>` (sin DNI lista los admins). Pide la nueva contraseña sin eco, cierra sus
   sesiones y lo deja en el Registro. En Windows, `Restablecer-admin.bat` (raíz del repo) lanza lo mismo.
-- `client/src/Chat.jsx` – en avanzada manda `conversationHistory(messages)`. En los dos modos solo enseña
+- `client/src/Chat.jsx` – si respondió la guía rápida, los documentos (como mucho 5) van plegados tras
+  «Ver también N documentos relacionados» (en avanzada se ven los citados). En avanzada manda `conversationHistory(messages)`. En los dos modos solo enseña
   el documento que más coincide (en avanzada, más los que cite la respuesta, `visibleResults`); el resto, tras el botón «¿Quieres
   ver N archivos relacionados más?» (`expanded` en el mensaje). Conmutador «Simple / Avanzada» (`.seg` en la barra del compositor; se
   recuerda en `localStorage` `neurorepo.chatMode`). En avanzada pinta la respuesta (`AnswerText`, citas

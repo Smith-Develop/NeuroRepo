@@ -34,10 +34,14 @@ function conversationHistory(messages, max = 3) {
 
 // En los dos modos se muestra el documento que más coincide (en avanzada, también los que cite la
 // respuesta); el resto, solo si el usuario pide verlos («¿Quieres ver N archivos relacionados más?»)
+// Si respondió la guía rápida, los documentos son solo «relacionados»: plegados (en avanzada, salvo
+// los que cite la respuesta). Si no, el que más coincide y, en avanzada, los citados.
 function visibleResults(m) {
   if (m.expanded) return m.results;
+  const cited = (i) => m.answer && i < m.sourceCount && m.answer.includes(`[${i + 1}]`);
+  if (m.guide?.length) return m.results.filter((_, i) => cited(i));
   if (!m.answer) return m.results.slice(0, 1);
-  return m.results.filter((_, i) => i === 0 || (i < m.sourceCount && m.answer.includes(`[${i + 1}]`)));
+  return m.results.filter((_, i) => i === 0 || cited(i));
 }
 
 // Texto de la respuesta con las citas [n] resaltadas
@@ -247,7 +251,7 @@ export default function Chat({ user, conversationId, topFolders = [], onOpenDocu
                     {m.guide.map((g, i) => <GuideCard key={i} entry={g} highlight={m.highlight} />)}
                   </div>
                 )}
-                {m.kind === "results" && !m.answer && !(m.guide?.length && !m.results.length && !m.aiError) && (
+                {m.kind === "results" && !m.answer && (!m.guide?.length || m.aiError) && (
                   <div className="bubble">
                     {m.aiError && <p className="error">No he podido preparar la respuesta con IA ({m.aiError}). Te muestro los documentos encontrados.</p>}
                     <p>
@@ -268,7 +272,13 @@ export default function Chat({ user, conversationId, topFolders = [], onOpenDocu
                 {m.kind === "results" && !m.expanded && m.results.length > visibleResults(m).length && (
                   <div className="followups">
                     <button type="button" className="btn btn-secondary btn-sm" onClick={() => replace(m.id, { expanded: true })}>
-                      ¿Quieres ver {m.results.length - visibleResults(m).length} archivo{m.results.length - visibleResults(m).length > 1 ? "s" : ""} relacionado{m.results.length - visibleResults(m).length > 1 ? "s" : ""} más?
+                      {(() => {
+                        const n = m.results.length - visibleResults(m).length;
+                        const s = n > 1 ? "s" : "";
+                        return m.guide?.length && !visibleResults(m).length
+                          ? `Ver también ${n} documento${s} relacionado${s}`
+                          : `¿Quieres ver ${n} archivo${s} relacionado${s} más?`;
+                      })()}
                     </button>
                   </div>
                 )}

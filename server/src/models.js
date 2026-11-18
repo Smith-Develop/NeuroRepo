@@ -15,14 +15,21 @@ const documentSchema = new mongoose.Schema(
     ocrStatus: { type: String, enum: ["none", "pending", "done", "failed"], default: "none", index: true },
     hasText: { type: Boolean, default: false }, // hay texto extraído (o de OCR): se puede leer en la vista previa y por la IA
     extractorVersion: { type: Number, default: 0 }, // versión de extract.js con la que se leyó (ver EXTRACTOR_VERSION)
+    // Resumen de la IA (summaries.js): de qué trata el documento y sus palabras clave. Es un añadido:
+    // la búsqueda sigue usando el texto completo. "none" = sin texto que resumir.
+    summary: { type: String, default: "" },
+    summaryKeywords: { type: [String], default: [] },
+    summaryStatus: { type: String, enum: ["none", "pending", "done", "failed"], default: "pending", index: true },
   },
   { timestamps: true },
 );
 
-// Búsqueda de texto completo: nombre de archivo y carpeta pesan más que el contenido extraído
+// Búsqueda de texto completo: nombre, carpeta, resumen y palabras clave pesan más que el contenido.
+// Si cambia esta definición, ensureDocumentTextIndex (index.js) rehace el índice al arrancar.
+export const DOCUMENT_TEXT_WEIGHTS = { filename: 5, summaryKeywords: 4, folder: 3, summary: 3, extractedText: 1 };
 documentSchema.index(
-  { filename: "text", folder: "text", extractedText: "text" },
-  { weights: { filename: 5, folder: 3, extractedText: 1 }, default_language: "spanish" },
+  Object.fromEntries(Object.keys(DOCUMENT_TEXT_WEIGHTS).map((k) => [k, "text"])),
+  { weights: DOCUMENT_TEXT_WEIGHTS, default_language: "spanish", name: "document_text" },
 );
 
 const groupSchema = new mongoose.Schema(

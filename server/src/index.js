@@ -8,6 +8,7 @@ import authRoutes from "./authRoutes.js";
 import { attachUser, requireAuth, bootstrapAdmin } from "./auth.js";
 import { AIError } from "./ai.js";
 import { scheduleIndexing } from "./indexer.js";
+import { Document, DOCUMENT_TEXT_WEIGHTS } from "./models.js";
 
 const app = express();
 app.set("trust proxy", 1); // para que req.secure/X-Forwarded-Proto funcionen tras el proxy de Coolify
@@ -50,8 +51,25 @@ async function connectWithRetry(uri, attempts = 10, delayMs = 2000) {
   }
 }
 
+// Mongo solo admite un índice de texto por colección: si su definición cambió (p. ej. al añadir los
+// resúmenes), se borra el anterior y se crea el nuevo. En una biblioteca grande tarda unos segundos.
+async function ensureDocumentTextIndex() {
+  await Document.init().catch(() => {}); // la creación automática falla mientras exista el índice antiguo
+  const current = (await Document.collection.indexes().catch(() => [])).find((i) => i.textIndexVersion);
+  const want = DOCUMENT_TEXT_WEIGHTS;
+  const same = current && Object.keys(current.weights || {}).length === Object.keys(want).length
+    && Object.entries(want).every(([k, w]) => current.weights[k] === w);
+  if (same) return;
+  if (current) {
+    console.log("Actualizando el índice de búsqueda de los documentos (resúmenes)…");
+    await Document.collection.dropIndex(current.name);
+  }
+  await Document.createIndexes();
+}
+
 const PORT = process.env.PORT || 4000;
 await connectWithRetry(process.env.MONGODB_URI || "mongodb://127.0.0.1:27017/notas-ia");
+await ensureDocumentTextIndex();
 await bootstrapAdmin();
 scheduleIndexing();
 app.listen(PORT, () => console.log(`App en http://localhost:${PORT}`));

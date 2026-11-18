@@ -118,14 +118,23 @@ export const highlightTerms = (concepts) => [...new Set(concepts.flatMap((c) => 
 export const expandedQuery = (question, concepts) => [question, ...concepts.flatMap((c) => c.expand)].join(" ");
 
 function rerank(concepts, docs) {
-  // Coincidir en el nombre o la carpeta pesa el doble que solo en el contenido
-  const rank = (d) => {
-    const name = norm(`${d.filename} ${d.folder}`);
-    const all = `${name} ${norm(d.extractedText || "")}`;
-    return concepts.reduce((acc, c) => acc + (conceptIn(c, all) ? 1 : 0) + (conceptIn(c, name) ? 1 : 0), 0);
-  };
-  return docs.map((d) => ({ d, h: rank(d) })).sort((a, b) => b.h - a.h || b.d.score - a.d.score).map(({ d }) => d);
+  // Coincidir en el nombre, la carpeta, el resumen o sus palabras clave pesa el doble que solo en el
+  // contenido. `matched` = conceptos distintos de la pregunta que aparecen en algún sitio.
+  return docs
+    .map((d) => {
+      const head = norm(`${d.filename} ${d.folder} ${d.summary || ""} ${(d.summaryKeywords || []).join(" ")}`);
+      const all = `${head} ${norm(d.extractedText || "")}`;
+      const matched = concepts.filter((c) => conceptIn(c, all)).length;
+      const inHead = concepts.filter((c) => conceptIn(c, head)).length;
+      return { d: { ...d, matched, conceptCount: concepts.length }, h: matched + inHead };
+    })
+    .sort((a, b) => b.h - a.h || b.d.score - a.d.score)
+    .map(({ d }) => d);
 }
+
+// Un documento cuenta como relacionado si tiene al menos la mitad de lo que se pregunta (el mismo
+// criterio que la guía rápida): así no salen documentos que solo comparten una palabra suelta.
+export const isRelevant = (d) => !d.conceptCount || d.matched >= Math.ceil(d.conceptCount / 2);
 
 // Puntuación aproximada del mejor resultado, usada para decidir si hace falta el respaldo de IA
 export function topScore(docs) {
@@ -165,7 +174,7 @@ export async function searchDocuments(query, limit = 30, lexicon = null) {
   // Una sola proyección: encadenar .select() después pisaría el $meta y dejaría "score" siempre undefined
   const found = await Document.find(
     { $text: { $search: expandedQuery(query, concepts) } },
-    { filename: 1, ext: 1, folder: 1, topFolder: 1, size: 1, mtimeMs: 1, textOk: 1, hasText: 1, extractedText: 1, score: { $meta: "textScore" } },
+    { filename: 1, ext: 1, folder: 1, topFolder: 1, size: 1, mtimeMs: 1, textOk: 1, hasText: 1, extractedText: 1, summary: 1, summaryKeywords: 1, score: { $meta: "textScore" } },
   ).sort({ score: { $meta: "textScore" } }).limit(limit).lean();
   return rerank(concepts, found).map((d) => {
     const { extractedText, ...rest } = d;

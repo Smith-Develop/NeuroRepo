@@ -1,4 +1,5 @@
 import { readdirSync, statSync } from "node:fs";
+import { processSummaryQueue, markLegacyForSummary } from "./summaries.js";
 import path from "node:path";
 import { Document } from "./models.js";
 import { getActiveLibraryPath, getAppConfig, safeResolve } from "./library.js";
@@ -43,7 +44,8 @@ export async function processOcrQueue() {
         const abs = safeResolve(await getActiveLibraryPath(), doc.path);
         const text = (doc.ext === ".pdf" ? await ocrPdf(abs) : await ocrImage(abs)).trim();
         update = { ocrStatus: "done" };
-        if (text.length > doc.extractedText.trim().length) Object.assign(update, { extractedText: text.slice(0, MAX_TEXT), hasText: true });
+        // Con texto nuevo del OCR, el documento pasa a la cola de resúmenes
+        if (text.length > doc.extractedText.trim().length) Object.assign(update, { extractedText: text.slice(0, MAX_TEXT), hasText: true, summaryStatus: "pending", summary: "", summaryKeywords: [] });
       } catch (e) {
         console.error(`OCR fallido en ${doc.path}: ${e.message}`);
         update = { ocrStatus: "failed" };
@@ -53,6 +55,7 @@ export async function processOcrQueue() {
   } finally {
     ocrRunning = false;
   }
+  processSummaryQueue().catch((e) => console.error("Error en la cola de resúmenes:", e));
 }
 
 function walk(root) {
@@ -108,13 +111,17 @@ export async function scanLibrary() {
           filename: path.basename(rel), ext, folder, topFolder, size: stat.size, mtimeMs: stat.mtimeMs,
           extractedText: extracted.text.slice(0, MAX_TEXT), textOk: extracted.ok, ocrStatus: extracted.needsOcr ? "pending" : "none",
           hasText: extracted.text.trim().length > 0, extractorVersion: EXTRACTOR_VERSION,
+          // contenido nuevo o cambiado: resumen nuevo (si no hay texto todavía, lo pedirá el OCR)
+          summary: "", summaryKeywords: [], summaryStatus: extracted.text.trim().length > 0 ? "pending" : "none",
         },
         { upsert: true },
       );
     }
     await Document.deleteMany({ path: { $nin: seenPaths } });
     await markLegacyForOcr();
+    await markLegacyForSummary();
     processOcrQueue().catch((e) => console.error("Error en la cola de OCR:", e));
+    processSummaryQueue().catch((e) => console.error("Error en la cola de resúmenes:", e));
 
     const config = await getAppConfig();
     config.lastScanAt = new Date();

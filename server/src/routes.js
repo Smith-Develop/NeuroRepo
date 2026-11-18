@@ -6,7 +6,7 @@ import * as XLSX from "xlsx";
 import { readFileSync } from "node:fs";
 import { Document, FolderConfig, FileVersion, TrashItem, Group, User, GuideEntry, GuideEntryHistory } from "./models.js";
 import { requireAdmin, requireGuideEditor, canSeeFolder, folderFilter, folderAncestors } from "./auth.js";
-import { searchDocuments, topScore, bestPassages, stemsOf, queryConcepts, highlightTerms } from "./search.js";
+import { searchDocuments, topScore, bestPassages, stemsOf, queryConcepts, highlightTerms, isRelevant } from "./search.js";
 import {
   guideEntries, searchGuide, allEntries, invalidateGuide, sanitizeEntry, checkDuplicates, titleKey, snapshot, parseGuideText,
   exportText, migrateLegacyGuide, DEFAULT_CATEGORIES, TYPES, GUIDE_MAX_CHARS,
@@ -21,6 +21,7 @@ import { recordVersion, trash, purgeTrashItem, renameVersionPaths, TRASH_DAYS } 
 import { scanLibrary } from "./indexer.js";
 import { logActivity } from "./activityLog.js";
 import { ocrAvailable } from "./ocr.js";
+import { SUMMARIES_ENABLED } from "./summaries.js";
 import { SHEET_EXTS, WORDX_EXTS } from "./extract.js";
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024, files: 20 } });
@@ -117,7 +118,9 @@ r.post("/ask", wrap(async (req, res) => {
   // 2) Biblioteca. Si la mejor coincidencia es de una carpeta sin permiso y la guía no responde, el
   // mensaje de carpeta bloqueada; si la guía sí responde, se sigue (los documentos sin permiso se
   // quitan igualmente más abajo).
-  let found = await searchDocuments(question, 30, lexicon);
+  // Solo documentos relacionados de verdad (al menos la mitad de lo que se pregunta)
+  const search = async (q) => (await searchDocuments(q, 30, lexicon)).filter(isRelevant);
+  let found = await search(question);
   if (!guide.length && found.length && !canSeeFolder(req.user, found[0].folder)) {
     const folder = found[0].folder;
     await logActivity(req, "search.blocked", `${folder}: ${question}`);
@@ -129,7 +132,7 @@ r.post("/ask", wrap(async (req, res) => {
   // junto con la pregunta anterior
   let searchQuery = question;
   if (history.length && (!found.length || topScore(found) < AI_FALLBACK_SCORE)) {
-    const withContext = await searchDocuments(`${history.at(-1).q} ${question}`, 30, lexicon);
+    const withContext = await search(`${history.at(-1).q} ${question}`);
     if (withContext.length && topScore(withContext) > topScore(found)) {
       found = withContext;
       searchQuery = `${history.at(-1).q} ${question}`;
@@ -143,7 +146,7 @@ r.post("/ask", wrap(async (req, res) => {
     try {
       const keywords = await suggestKeywords(question);
       if (keywords) {
-        const retry = await searchDocuments(keywords, 30, lexicon);
+        const retry = await search(keywords);
         if (retry.length) { found = retry; usedAI = true; }
       }
     } catch {
@@ -152,7 +155,8 @@ r.post("/ask", wrap(async (req, res) => {
   }
 
   found = found.filter((d) => canSeeFolder(req.user, d.folder) && (!scope || d.topFolder === scope));
-  const results = found.slice(0, 10);
+  // Si la guía ya responde, los documentos son solo «relacionados» (el chat los enseña plegados)
+  const results = found.slice(0, guide.length ? 5 : 10);
   // Términos que el cliente resalta en el párrafo de cada documento y en la guía
   const highlight = highlightTerms(queryConcepts(searchQuery, lexicon));
   if (!advanced || (!results.length && !guide.length)) return res.json({ results, usedAI, guide, highlight });
@@ -163,7 +167,11 @@ r.post("/ask", wrap(async (req, res) => {
   const textById = new Map(texts.map((t) => [String(t._id), t.extractedText]));
   // El primero (el que más coincide) se lee mucho más a fondo que el segundo
   const docChars = guide.length ? 1200 : 3500;
-  const sources = sourcesDocs.map((d, i) => ({ filename: d.filename, folder: d.folder, text: bestPassages(searchQuery, textById.get(String(d._id)), i === 0 ? docChars : 1200) }));
+  const sources = sourcesDocs.map((d, i) => ({
+    filename: d.filename,
+    folder: d.folder,
+    text: `${d.summary ? `(Resumen: ${d.summary})\n` : ""}${bestPassages(searchQuery, textById.get(String(d._id)), i === 0 ? docChars : 1200)}`,
+  }));
   try {
     let answer = await answerFromDocuments(question, sources, history, guide);
     // El modelo pequeño a veces numera la guía como si fuera un documento: una cita [n] sin documento
@@ -514,10 +522,14 @@ r.patch("/folders/:name", requireAdmin, wrap(async (req, res) => {
 // Estado y gestión de la biblioteca de documentos (solo admin)
 r.get("/library", requireAdmin, wrap(async (req, res) => {
   const config = await getAppConfig();
-  const [totalDocuments, ocrPending, ocrFailed, ocr] = await Promise.all([
+  const [totalDocuments, ocrPending, ocrFailed, ocr, summariesDone, summariesPending] = await Promise.all([
     Document.countDocuments(), Document.countDocuments({ ocrStatus: "pending" }), Document.countDocuments({ ocrStatus: "failed" }), ocrAvailable(),
+    Document.countDocuments({ summaryStatus: "done" }), Document.countDocuments({ summaryStatus: "pending" }),
   ]);
-  res.json({ libraryPath: config.libraryPath, lastScanAt: config.lastScanAt, lastScanCount: config.lastScanCount, totalDocuments, ocr, ocrPending, ocrFailed, model: MODEL });
+  res.json({
+    libraryPath: config.libraryPath, lastScanAt: config.lastScanAt, lastScanCount: config.lastScanCount, totalDocuments, ocr, ocrPending, ocrFailed, model: MODEL,
+    summaries: SUMMARIES_ENABLED, summariesDone, summariesPending,
+  });
 }));
 
 r.get("/library/browse", requireAdmin, wrap(async (req, res) => {

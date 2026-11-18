@@ -73,7 +73,7 @@ export default function LibraryPicker({ onClose }) {
   }
   useEffect(() => { loadStatus(); browse(""); }, []);
   // Mientras haya OCR pendiente, refresca el contador para ver cómo avanza la cola
-  const ocrBusy = status?.ocr && status.ocrPending > 0;
+  const ocrBusy = (status?.ocr && status.ocrPending > 0) || (status?.summaries && status.summariesPending > 0);
   useEffect(() => {
     if (!ocrBusy) return;
     const t = setInterval(loadStatus, 5000);
@@ -170,6 +170,10 @@ export default function LibraryPicker({ onClose }) {
               <div title={status.ocrFailed ? `${status.ocrFailed} documento(s) no se pudieron leer con OCR` : undefined}>
                 <small>OCR (escaneos)</small>
                 <b>{!status.ocr ? "No disponible" : status.ocrPending ? `${status.ocrPending} en cola` : "Al día"}</b>
+              </div>
+              <div title="La IA resume cada documento en segundo plano (se pausa mientras alguien usa el chat)">
+                <small>Resúmenes (IA)</small>
+                <b>{!status.summaries ? "Desactivados" : status.summariesPending ? `${status.summariesDone} hechos · ${status.summariesPending} en cola` : `${status.summariesDone} · al día`}</b>
               </div>
             </div>
           )}

@@ -97,6 +97,7 @@ export default function DocumentCard({ doc: saved, score, maxScore, cite, highli
           ))}
           {" · "}{formatSize(doc.size)}{doc.mtimeMs ? ` · ${formatDate(doc.mtimeMs)}` : ""}
         </div>
+        {doc.summary && <div className="doc-summary" title="Resumen hecho por la IA: compruébalo en el documento">{doc.summary}</div>}
         {doc.excerpt && !isVideo && !isAudio && <div className="snip"><Highlight text={doc.excerpt} terms={highlight} /></div>}
         {isVideo && <div className="media"><video controls preload="metadata" src={api.viewUrl(doc._id)} /></div>}
         {isAudio && <div className="media"><audio controls preload="metadata" src={api.viewUrl(doc._id)} /></div>}
