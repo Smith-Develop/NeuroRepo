@@ -240,6 +240,12 @@ Nada depende de APIs de pago.
   elegido, avisos de duplicados mientras se escribe (`/guide/check`, bloquea guardar si el título ya
   existe en la categoría), visibilidad Todos/Solo admin, historial («Cargar en el formulario»), importar
   `.txt` (UTF-8 o Windows-1252), exportar `.txt` (UTF-8 con BOM y CRLF), «Sinónimos» y «Borradas».
+  La categoría es «Aplicación / Subcategoría» (`HCIS / Incidencias`; subcategorías en `SUBCATEGORIES`:
+  Información, Acceso, Alta, Permisos, Procedimientos, Peticiones, Incidencias, Instalación,
+  Credenciales, Contacto): el formulario la pide en dos campos y el listado agrupa por aplicación
+  (alfabético) y subcategoría; el filtro es por aplicación. En el `.txt` va tal cual en la cabecera
+  («HCIS / Incidencias · No imprime»). «Importar .txt» de un admin pregunta si **sustituir** toda la guía
+  (`POST /guide/import {text, replace: true}`): las fichas actuales pasan a «Borradas» (recuperables).
   `client/src/GuideCard.jsx` – la ficha en el chat (categoría, tipo, título; plegada si es larga).
   `client/src/highlight.jsx` – `<Highlight text terms>`: marca con `<mark>` las palabras que empiezan
   por los términos de `highlight` (en `GuideCard` y en el párrafo de `DocumentCard`). `AnswerText`

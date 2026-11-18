@@ -608,6 +608,8 @@ mark { background: var(--warn-soft); color: inherit; border-radius: 3px; padding
 .guide-group-head { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--border); background: var(--surface); color: var(--text-2); font-size: 13px; }
 .guide-group-head b { color: var(--text); font-weight: 600; }
 .guide-group-head .count { margin-left: auto; font-size: 11.5px; color: var(--text-3); font-variant-numeric: tabular-nums; }
+.guide-sub-head { display: flex; align-items: center; gap: 8px; padding: 7px 14px 5px 36px; font-size: 11.5px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; color: var(--text-3); border-bottom: 1px solid var(--border); background: var(--surface-2); }
+.guide-sub-head .count { margin-left: auto; font-weight: 400; font-variant-numeric: tabular-nums; }
 .guide-row { display: flex; align-items: center; gap: 10px; padding: 4px 10px 4px 4px; border-bottom: 1px solid var(--border); }
 .guide-row:last-child { border-bottom: 0; }
 .guide-row:hover { background: var(--row-hover); }

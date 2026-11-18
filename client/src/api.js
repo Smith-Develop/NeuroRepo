@@ -29,7 +29,7 @@ export const api = {
   guideDeleted: () => req("/guide/deleted"),
   restoreGuideEntry: (historyId) => req(`/guide/deleted/${historyId}/restore`, { method: "POST" }),
   checkGuideEntry: (entry, id) => req("/guide/check", { method: "POST", body: { entry, id } }),
-  importGuide: (text) => req("/guide/import", { method: "POST", body: { text } }),
+  importGuide: (text, replace = false) => req("/guide/import", { method: "POST", body: { text, replace } }),
   // Texto plano, no JSON
   exportGuide: async () => {
     const res = await fetch("/api/guide/export");

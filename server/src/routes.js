@@ -310,6 +310,19 @@ r.post("/guide/import", requireGuideEditor, wrap(async (req, res) => {
   if (!raw.trim()) return res.status(400).json({ error: "El archivo está vacío." });
   if (raw.length > GUIDE_MAX_CHARS) return res.status(413).json({ error: `El archivo no puede pasar de ${GUIDE_MAX_CHARS.toLocaleString("es-ES")} caracteres.` });
   await migrateLegacyGuide();
+  // replace (solo admin): la guía entera pasa a ser la del archivo. Las fichas actuales se guardan
+  // antes como borradas, así que se pueden recuperar desde «Borradas».
+  const replace = req.body?.replace === true;
+  if (replace) {
+    if (!isAdminReq(req)) return res.status(403).json({ error: "Solo un administrador puede sustituir toda la guía." });
+    if (!parseGuideText(raw).length) return res.status(400).json({ error: "El archivo no tiene ninguna ficha: no se sustituye nada." });
+    const current = await GuideEntry.find({}).lean();
+    if (current.length) {
+      const now = new Date();
+      await GuideEntryHistory.insertMany(current.map(({ _id, __v, ...snap }) => ({ entryId: _id, snapshot: snap, action: "delete", savedAt: now, savedBy: req.user.name })));
+      await GuideEntry.deleteMany({ _id: { $in: current.map((e) => e._id) } });
+    }
+  }
   const keys = new Set((await GuideEntry.find({}, "title category").lean()).map(titleKey));
   const t0 = Date.now();
   const toCreate = [];
@@ -326,7 +339,7 @@ r.post("/guide/import", requireGuideEditor, wrap(async (req, res) => {
   }
   if (toCreate.length) await GuideEntry.insertMany(toCreate, { timestamps: false });
   guideChanged();
-  await logActivity(req, "guide.import", `${toCreate.length} fichas nuevas, ${skipped} repetidas`);
+  await logActivity(req, "guide.import", `${replace ? "guía sustituida: " : ""}${toCreate.length} fichas nuevas, ${skipped} repetidas`);
   res.json({ created: toCreate.length, skipped, forbidden });
 }));
 

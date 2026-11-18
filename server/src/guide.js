@@ -108,7 +108,7 @@ export function parseBlock(block) {
   const heading = (lines[h] || "").trim().replace(/^[-•*·\s]+/, "");
   let rest = lines.slice(h + 1);
   const dot = heading.indexOf(" · ");
-  const category = dot > 0 ? heading.slice(0, dot).trim().slice(0, 60) : "";
+  const category = dot > 0 ? heading.slice(0, dot).trim().slice(0, 100) : "";
   const title = (dot > 0 ? heading.slice(dot + 3) : heading).trim().slice(0, 150);
   let keywords = [];
   const kwLine = rest.findIndex((l) => l.trim());
@@ -178,7 +178,7 @@ export function sanitizeEntry(input) {
   if (type === "procedimiento") { const p = list(Array.isArray(f.pasos) ? f.pasos : [], 60, 2000); if (p.length) fields.pasos = p; }
   return {
     type,
-    category: clip(input?.category, 60).replace(/\s+/g, " "),
+    category: clip(input?.category, 100).replace(/\s+/g, " "),
     title,
     keywords: [...new Set(list(input?.keywords, 20, 40))],
     content: clip(input?.content, 20_000),

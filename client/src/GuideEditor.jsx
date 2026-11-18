@@ -37,6 +37,15 @@ const CONTENT_LABEL = {
   acceso: "Usuarios, contraseñas y datos",
 };
 
+// Categoría = «Aplicación / Subcategoría» (p. ej. «HCIS / Incidencias»): el listado se agrupa así
+export const SUBCATEGORIES = ["Información", "Acceso", "Alta", "Permisos", "Procedimientos", "Peticiones", "Incidencias", "Instalación", "Credenciales", "Contacto"];
+const splitCat = (c) => {
+  const i = (c || "").indexOf(" / ");
+  return i < 0 ? [c || "", ""] : [c.slice(0, i), c.slice(i + 3)];
+};
+const joinCat = (app, sub) => (sub.trim() ? `${app.trim()} / ${sub.trim()}` : app.trim());
+const subOrder = (s) => { const i = SUBCATEGORIES.indexOf(s); return i < 0 ? SUBCATEGORIES.length : i; };
+
 const norm = (s) => (s || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "");
 const fecha = (d) => (d ? new Date(d).toLocaleString("es-ES", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "");
 const heading = (e) => (e.category ? `${e.category} · ${e.title}` : e.title);
@@ -64,7 +73,8 @@ function download(name, text) {
 // Ficha guardada → estado del formulario, y al revés
 const toForm = (e = {}) => ({
   type: e.type || "nota",
-  category: e.category || "",
+  app: splitCat(e.category)[0],
+  sub: splitCat(e.category)[1],
   title: e.title || "",
   keywords: (e.keywords || []).join(", "),
   content: e.content || "",
@@ -81,7 +91,7 @@ function fromForm(f) {
   if (f.type === "procedimiento") fields.pasos = f.pasos.map((p) => p.trim()).filter(Boolean);
   return {
     type: f.type,
-    category: f.category.trim(),
+    category: joinCat(f.app, f.sub),
     title: f.title.trim(),
     keywords: f.keywords.split(",").map((k) => k.trim()).filter(Boolean),
     content: f.content,
@@ -114,30 +124,42 @@ export default function GuideEditor() {
   const shown = useMemo(() => {
     const words = norm(q).split(/\s+/).filter(Boolean);
     return entries.filter((e) => {
-      if (cat && e.category !== cat) return false;
+      if (cat && splitCat(e.category)[0] !== cat) return false;
       if (type && e.type !== type) return false;
       if (!words.length) return true;
       const hay = norm([e.category, e.title, ...(e.keywords || []), e.content, ...Object.values(e.fields || {}).flat()].join(" "));
       return words.every((w) => hay.includes(w));
     });
   }, [entries, q, cat, type]);
+  // Aplicación → subcategoría → fichas, por orden alfabético de aplicación
   const groups = useMemo(() => {
     const m = new Map();
     for (const e of shown) {
-      const k = e.category || "Sin categoría";
-      if (!m.has(k)) m.set(k, []);
-      m.get(k).push(e);
+      const [app, sub] = splitCat(e.category);
+      const k = app || "Sin categoría";
+      if (!m.has(k)) m.set(k, new Map());
+      const subs = m.get(k);
+      if (!subs.has(sub)) subs.set(sub, []);
+      subs.get(sub).push(e);
     }
-    return [...m];
+    return [...m]
+      .sort((a, b) => a[0].localeCompare(b[0], "es", { sensitivity: "base" }))
+      .map(([app, subs]) => [app, [...subs].sort((a, b) => subOrder(a[0]) - subOrder(b[0]) || a[0].localeCompare(b[0], "es"))]);
   }, [shown]);
+  const apps = useMemo(() => [...new Set(entries.map((e) => splitCat(e.category)[0]).filter(Boolean))].sort((a, b) => a.localeCompare(b, "es", { sensitivity: "base" })), [entries]);
   const lastEdit = useMemo(() => entries.reduce((a, e) => (!a || new Date(e.updatedAt) > new Date(a.updatedAt) ? e : a), null), [entries]);
 
   async function importFile(ev) {
     const file = ev.target.files?.[0];
     ev.target.value = "";
     if (!file) return;
+    // Un admin puede sustituir la guía entera (p. ej. tras reorganizarla); si no, solo se añaden las nuevas
+    const replace = isAdmin && entries.length > 0 && confirm(
+      `¿SUSTITUIR toda la guía por «${file.name}»?\n\n` +
+      "Aceptar: las " + entries.length + " fichas actuales se quitan (quedan en «Borradas», recuperables) y se cargan las del archivo.\n" +
+      "Cancelar: se conservan las actuales y solo se añaden las fichas nuevas del archivo.");
     try {
-      const r = await api.importGuide(await readTextFile(file));
+      const r = await api.importGuide(await readTextFile(file), replace);
       await load();
       toast(`${r.created} ficha${r.created === 1 ? "" : "s"} nueva${r.created === 1 ? "" : "s"}${r.skipped ? `, ${r.skipped} ya existían` : ""}${r.forbidden ? `, ${r.forbidden} «solo admin» sin importar` : ""}`);
     } catch (e) { setError(e.message); }
@@ -175,16 +197,16 @@ export default function GuideEditor() {
       </div>
       <div className="stats">
         <div className="stat"><div className="k"><BookIcon size={14} />Fichas</div><div className="v">{entries.length}</div></div>
-        <div className="stat"><div className="k"><FolderIcon size={14} />Categorías</div><div className="v">{new Set(entries.map((e) => e.category)).size}</div></div>
+        <div className="stat"><div className="k"><FolderIcon size={14} />Aplicaciones y áreas</div><div className="v">{apps.length}</div></div>
         {isAdmin && <div className="stat"><div className="k"><LockIcon size={14} />Solo admin</div><div className="v">{entries.filter((e) => e.adminOnly).length}</div></div>}
         <div className="stat"><div className="k"><HistoryIcon size={14} />Última edición</div><div className="v sm">{lastEdit ? `${fecha(lastEdit.updatedAt)} · ${lastEdit.updatedBy || "?"}` : "—"}</div></div>
       </div>
       {error && <p className="error" role="alert">{error}</p>}
       <div className="toolbar">
         <div className="input-icon" style={{ width: 260 }}><SearchIcon size={15} /><input className="input" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar fichas…" aria-label="Buscar fichas" /></div>
-        <select className="select" style={{ width: "auto" }} value={cat} onChange={(e) => setCat(e.target.value)} aria-label="Categoría">
-          <option value="">Todas las categorías</option>
-          {[...new Set(entries.map((e) => e.category).filter(Boolean))].map((c) => <option key={c} value={c}>{c}</option>)}
+        <select className="select" style={{ width: "auto", maxWidth: 260 }} value={cat} onChange={(e) => setCat(e.target.value)} aria-label="Aplicación o área">
+          <option value="">Todas las aplicaciones</option>
+          {apps.map((c) => <option key={c} value={c}>{c}</option>)}
         </select>
         <select className="select" style={{ width: "auto" }} value={type} onChange={(e) => setType(e.target.value)} aria-label="Tipo">
           <option value="">Todos los tipos</option>
@@ -201,10 +223,12 @@ export default function GuideEditor() {
           {entries.length ? "Prueba con otras palabras o quita los filtros." : "Crea la primera o importa el .txt de la guía."}
         </div></div>
       )}
-      {groups.map(([category, list]) => (
-        <div key={category} className="card guide-group">
-          <div className="guide-group-head"><FolderIcon size={14} /><b>{category}</b><span className="count">{list.length}</span></div>
-          {list.map((e) => (
+      {groups.map(([app, subs]) => (
+        <div key={app} className="card guide-group">
+          <div className="guide-group-head"><FolderIcon size={14} /><b>{app}</b><span className="count">{subs.reduce((n, [, l]) => n + l.length, 0)}</span></div>
+          {subs.map(([sub, list]) => [
+          sub && <div key={`h-${sub}`} className="guide-sub-head">{sub}<span className="count">{list.length}</span></div>,
+          ...list.map((e) => (
             <div key={e._id} className="guide-row">
               <button type="button" className="guide-row-main" onClick={() => setEditing({ entry: e })}>
                 <span className={`badge type-${e.type}`}>{TYPES[e.type]?.label || e.type}</span>
@@ -215,7 +239,7 @@ export default function GuideEditor() {
               <span className="guide-row-meta">{fecha(e.updatedAt)} · {e.updatedBy || "?"}</span>
               <button type="button" className="btn-icon sm" onClick={() => remove(e)} aria-label={`Borrar ${e.title}`} title="Borrar"><TrashIcon size={14} /></button>
             </div>
-          ))}
+          ))])}
         </div>
       ))}
 
@@ -251,7 +275,7 @@ function EntryDialog({ entry, categories, isAdmin, onClose, onOpen, onSaved }) {
       api.checkGuideEntry(fromForm(f), entry._id).then(setCheck).catch(() => {});
     }, 350);
     return () => clearTimeout(t);
-  }, [f.title, f.category, f.grupos, f.fields.url, f.type]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [f.title, f.app, f.sub, f.grupos, f.fields.url, f.type]); // eslint-disable-line react-hooks/exhaustive-deps
 
   function close() {
     if (dirty && !confirm("Hay cambios sin guardar en esta ficha. ¿Cerrar igualmente?")) return;
@@ -324,11 +348,16 @@ function EntryDialog({ entry, categories, isAdmin, onClose, onOpen, onSaved }) {
 
           <div className="guide-grid">
             <div className="field">
-              <label htmlFor="ficCat">Categoría</label>
-              <input className="input" id="ficCat" list="ficCats" maxLength={60} value={f.category} onChange={(e) => set({ category: e.target.value })} placeholder="Elige una o escribe una nueva" />
-              <datalist id="ficCats">{categories.map((c) => <option key={c} value={c} />)}</datalist>
+              <label htmlFor="ficCat">Aplicación o área</label>
+              <input className="input" id="ficCat" list="ficCats" maxLength={70} value={f.app} onChange={(e) => set({ app: e.target.value })} placeholder="HCIS, Correo, Red…" />
+              <datalist id="ficCats">{[...new Set(categories.map((c) => splitCat(c)[0]))].map((c) => <option key={c} value={c} />)}</datalist>
             </div>
             <div className="field">
+              <label htmlFor="ficSub">Subcategoría</label>
+              <input className="input" id="ficSub" list="ficSubs" maxLength={28} value={f.sub} onChange={(e) => set({ sub: e.target.value })} placeholder="Alta, Incidencias, Acceso…" />
+              <datalist id="ficSubs">{SUBCATEGORIES.map((c) => <option key={c} value={c} />)}</datalist>
+            </div>
+            <div className="field span2">
               <label htmlFor="ficTitle">Título</label>
               <input className="input" id="ficTitle" required maxLength={150} value={f.title} onChange={(e) => set({ title: e.target.value })} placeholder={f.type === "aplicacion" ? "Nombre de la aplicación" : "Qué resuelve esta ficha"} autoFocus={isNew} />
             </div>
