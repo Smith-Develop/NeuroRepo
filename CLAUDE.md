@@ -202,7 +202,7 @@ Nada depende de APIs de pago.
   folders: [String]}` (rutas de carpeta de cualquier profundidad, relativas a la biblioteca activa; no
   referencias), `FolderConfig {folder,
   blockedMessage}`, `AppConfig` (documento único con la biblioteca activa y el estado del último escaneo),
-  `User {name, dni, passwordHash?, role, group, favorites: [Document], canEditGuide}` (`passwordHash` solo lo tiene el admin), `Session`
+  `User {name, dni, passwordHash?, role, group, favorites: [Document], canEditGuide, canUseAdvanced}` (`passwordHash` solo lo tiene el admin), `Session`
   (índice TTL, igual que antes).
 - `server/src/auth.js` – permisos por ruta: cada ruta del grupo incluye sus subcarpetas
   (`canSeeFolder`: igual a la ruta o empieza por `ruta + "/"`, así «Cal» no da acceso a «Calidad»);
@@ -298,7 +298,9 @@ Nada depende de APIs de pago.
 - `client/src/Login.jsx` – un único campo DNI; si el servidor responde `needsPassword`, aparece el segundo
   campo de contraseña (solo le pasa al admin).
 - `client/src/Users.jsx` – menú de cada usuario: «Permitir editar la guía rápida» (`canEditGuide`, insignia
-  «Edita la guía»; `PATCH /users/:id {canEditGuide}`). Alta nombre+DNI, botón «Importar .txt» (lee el archivo con `FileReader` en el
+  «Edita la guía»; `PATCH /users/:id {canEditGuide}`) y «Permitir la búsqueda avanzada (IA)»
+  (`canUseAdvanced`, insignia «Búsqueda avanzada»). Sin ese permiso el chat no enseña el conmutador
+  Simple/Avanzada y `/ask` responde en simple aunque se pida `mode: "advanced"` (los admins siempre lo tienen). Alta nombre+DNI, botón «Importar .txt» (lee el archivo con `FileReader` en el
   navegador y manda el texto tal cual, sin subida multipart). `client/src/Groups.jsx` – `FolderTree`
   plegable (solo pinta los hijos de lo abierto: hay cientos de carpetas a varios niveles). En el diálogo
   del grupo, marcar una carpeta marca —deshabilitadas— sus subcarpetas y quita las que ya estuvieran

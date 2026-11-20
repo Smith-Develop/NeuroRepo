@@ -67,6 +67,8 @@ const userSchema = new mongoose.Schema(
     favorites: { type: [{ type: mongoose.Schema.Types.ObjectId, ref: "Document" }], default: [] },
     // Permiso que da un admin a usuarios concretos para crear y editar fichas de la Guía rápida
     canEditGuide: { type: Boolean, default: false },
+    // Búsqueda avanzada (la IA redacta respuestas): solo los admins y a quien un admin se la active
+    canUseAdvanced: { type: Boolean, default: false },
   },
   { timestamps: true },
 );

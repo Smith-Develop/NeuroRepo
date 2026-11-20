@@ -96,12 +96,12 @@ function Composer({ dock, value, onChange, onSend, scope, scopeOptions, onScope,
             </div>
           )}
         </div>
-        <div className="seg" role="group" aria-label="Modo de búsqueda">
+        {onMode && <div className="seg" role="group" aria-label="Modo de búsqueda">
           <button type="button" className={mode === "simple" ? "on" : ""} aria-pressed={mode === "simple"} onClick={() => onMode("simple")}
             title="Busca documentos por coincidencia de texto (rápido)"><SearchIcon size={13} /><span className="seg-lbl">Simple</span></button>
           <button type="button" className={mode === "advanced" ? "on" : ""} aria-pressed={mode === "advanced"} onClick={() => onMode("advanced")}
             title="La IA lee los documentos encontrados y responde a tu pregunta (más lento)"><SparkleIcon size={13} /><span className="seg-lbl">Avanzada</span></button>
-        </div>
+        </div>}
         <span className="grow" />
         <span className="tip"><span className="kbd">↵</span> {mode === "advanced" ? "preguntar" : "buscar"}</span>
         <button className="send" type="submit" disabled={!value.trim()} aria-label="Buscar"><UpArrowIcon size={16} /></button>
@@ -116,7 +116,9 @@ export default function Chat({ user, conversationId, topFolders = [], onOpenDocu
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [scope, setScope] = useState(saved?.scope || "all");
-  const [mode, setModeState] = useState(initialMode);
+  const [storedMode, setModeState] = useState(initialMode);
+  // Sin permiso de búsqueda avanzada (lo da un admin en Usuarios), siempre simple y sin conmutador
+  const mode = user?.canUseAdvanced ? storedMode : "simple";
 
   function setMode(m) {
     setModeState(m);
@@ -182,7 +184,7 @@ export default function Chat({ user, conversationId, topFolders = [], onOpenDocu
           <span className="eyebrow"><span className="badge accent">Docu</span>Hola, <b style={{ color: "var(--text)", fontWeight: 500 }}>{user?.name || "Admin"}</b> 👋</span>
           <h1>¿Qué documento buscas hoy?</h1>
           <p className="sub">Escribe un nombre, un tema o unas palabras clave. Docu busca en tus carpetas y te muestra los documentos más relevantes, listos para abrir o descargar.</p>
-          <Composer value={input} onChange={setInput} onSend={() => ask(input)} scope={scope} scopeOptions={scopeOptions} onScope={setScope} mode={mode} onMode={setMode} autoFocus />
+          <Composer value={input} onChange={setInput} onSend={() => ask(input)} scope={scope} scopeOptions={scopeOptions} onScope={setScope} mode={mode} onMode={user?.canUseAdvanced ? setMode : null} autoFocus />
           <div className="suggest">
             {SUGERENCIAS.map(({ q, Icon }) => (
               <button type="button" key={q} className="sugg" onClick={() => ask(q)}>
@@ -290,7 +292,7 @@ export default function Chat({ user, conversationId, topFolders = [], onOpenDocu
       </div>
       <div className="dock">
         <div className="dock-in">
-          <Composer dock value={input} onChange={setInput} onSend={() => ask(input)} scope={scope} scopeOptions={scopeOptions} onScope={setScope} mode={mode} onMode={setMode} />
+          <Composer dock value={input} onChange={setInput} onSend={() => ask(input)} scope={scope} scopeOptions={scopeOptions} onScope={setScope} mode={mode} onMode={user?.canUseAdvanced ? setMode : null} />
           <div className="foot">Docu solo muestra documentos de las carpetas que tu grupo tiene permitidas.</div>
         </div>
       </div>

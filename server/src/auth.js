@@ -59,7 +59,7 @@ export async function attachUser(req, _res, next) {
   if (token) {
     const session = await Session.findById(token).populate({
       path: "user",
-      select: "name dni role group canEditGuide",
+      select: "name dni role group canEditGuide canUseAdvanced",
       populate: { path: "group", select: "folders" },
     });
     if (session && session.expiresAt > new Date()) req.user = session.user;
@@ -108,6 +108,7 @@ export function requireAdmin(req, res, next) {
 }
 
 // Fichas de la Guía rápida: los admins y los usuarios a los que un admin se lo haya permitido
+export const canUseAdvanced = (user) => user?.role === "admin" || Boolean(user?.canUseAdvanced);
 export const canEditGuide = (user) => user?.role === "admin" || Boolean(user?.canEditGuide);
 export function requireGuideEditor(req, res, next) {
   if (!req.user) return res.status(401).json({ error: "Inicia sesión para continuar." });

@@ -5,7 +5,7 @@ import mammoth from "mammoth";
 import * as XLSX from "xlsx";
 import { readFileSync } from "node:fs";
 import { Document, FolderConfig, FileVersion, TrashItem, Group, User, GuideEntry, GuideEntryHistory } from "./models.js";
-import { requireAdmin, requireGuideEditor, canSeeFolder, folderFilter, folderAncestors } from "./auth.js";
+import { requireAdmin, requireGuideEditor, canSeeFolder, canUseAdvanced, folderFilter, folderAncestors } from "./auth.js";
 import { searchDocuments, topScore, bestPassages, stemsOf, queryConcepts, highlightTerms, isRelevant } from "./search.js";
 import {
   guideEntries, searchGuide, allEntries, invalidateGuide, sanitizeEntry, checkDuplicates, titleKey, snapshot, parseGuideText,
@@ -101,7 +101,9 @@ const HISTORY_TURNS = 3;
 const COMPLEX_MIN_WORDS = Number(process.env.COMPLEX_MIN_WORDS) || 4;
 r.post("/ask", wrap(async (req, res) => {
   const question = text(req.body?.question, 500);
-  const advanced = req.body?.mode === "advanced";
+  // La búsqueda avanzada (IA que redacta) solo la usan los admins y a quien se la activen; al resto se le
+  // responde en modo simple aunque la pida
+  const advanced = req.body?.mode === "advanced" && canUseAdvanced(req.user);
   const scope = text(req.body?.scope, 500); // carpeta de primer nivel elegida en el chat ("" = todas)
   // Modo avanzado conversacional: las últimas preguntas/respuestas, para entender las de seguimiento
   const history = advanced && Array.isArray(req.body?.history)

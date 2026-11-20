@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { toast } from "./toast";
-import { UploadIcon, UserPlusIcon, UsersIcon, ShieldIcon, LockIcon, DotsIcon, TrashIcon, XIcon, HomeIcon, ChevronRightIcon, BookIcon } from "./icons";
+import { UploadIcon, UserPlusIcon, UsersIcon, ShieldIcon, LockIcon, DotsIcon, TrashIcon, XIcon, HomeIcon, ChevronRightIcon, BookIcon, SparkleIcon } from "./icons";
 
 const COLORS = ["", "c2", "c3", "c4"];
 const initialsOf = (name) => (name || "?").trim().split(/\s+/).map((p) => p[0]).join("").slice(0, 2).toUpperCase();
@@ -66,7 +66,7 @@ function UserDialog({ groups, onClose, onCreated }) {
   );
 }
 
-function UserMenu({ anchorRef, u, onClose, onMakeAdmin, onRemoveAdmin, onToggleGuide, onDelete }) {
+function UserMenu({ anchorRef, u, onClose, onMakeAdmin, onRemoveAdmin, onToggleGuide, onToggleAdvanced, onDelete }) {
   const [pos, setPos] = useState(null);
   useEffect(() => {
     const r = anchorRef.current?.getBoundingClientRect();
@@ -86,6 +86,11 @@ function UserMenu({ anchorRef, u, onClose, onMakeAdmin, onRemoveAdmin, onToggleG
       {u.role !== "admin" && (
         <button type="button" onClick={() => { onClose(); onToggleGuide(u); }}>
           <BookIcon size={14} />{u.canEditGuide ? "Quitar permiso de la guía rápida" : "Permitir editar la guía rápida"}
+        </button>
+      )}
+      {u.role !== "admin" && (
+        <button type="button" onClick={() => { onClose(); onToggleAdvanced(u); }}>
+          <SparkleIcon size={14} />{u.canUseAdvanced ? "Quitar la búsqueda avanzada (IA)" : "Permitir la búsqueda avanzada (IA)"}
         </button>
       )}
       <hr />
@@ -119,6 +124,20 @@ export default function Users({ currentUser }) {
       await api.updateUser(u._id, { canEditGuide: !u.canEditGuide });
       await load();
       toast(u.canEditGuide ? `${u.name} ya no puede editar la guía rápida` : `${u.name} ya puede editar la guía rápida`);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  // Búsqueda avanzada: la IA redacta respuestas; solo a quien se le active (los admins ya la tienen)
+  async function toggleAdvanced(u) {
+    setBusy(true);
+    try {
+      await api.updateUser(u._id, { canUseAdvanced: !u.canUseAdvanced });
+      await load();
+      toast(u.canUseAdvanced ? `${u.name} ya no puede usar la búsqueda avanzada` : `${u.name} ya puede usar la búsqueda avanzada`);
     } catch (err) {
       setError(err.message);
     } finally {
@@ -253,7 +272,8 @@ export default function Users({ currentUser }) {
                 </td>
                 <td className="muted hide-sm" style={{ fontVariantNumeric: "tabular-nums" }}>{u.dni}</td>
                 <td>{u.role === "admin" ? <span className="badge accent"><span className="dot" />Admin</span> : <span className="badge"><span className="dot" />Usuario</span>}
-                  {u.role !== "admin" && u.canEditGuide && <span className="badge ok" style={{ marginLeft: 6 }} title="Puede crear y editar fichas de la guía rápida"><BookIcon size={11} />Edita la guía</span>}</td>
+                  {u.role !== "admin" && u.canEditGuide && <span className="badge ok" style={{ marginLeft: 6 }} title="Puede crear y editar fichas de la guía rápida"><BookIcon size={11} />Edita la guía</span>}
+                  {u.role !== "admin" && u.canUseAdvanced && <span className="badge accent" style={{ marginLeft: 6 }} title="Puede usar la búsqueda avanzada (la IA redacta respuestas)"><SparkleIcon size={11} />Búsqueda avanzada</span>}</td>
                 <td>
                   {u.role === "admin" ? <span className="badge accent"><ShieldIcon size={12} />Acceso total</span> : (
                     <>
@@ -270,7 +290,7 @@ export default function Users({ currentUser }) {
                     onClick={(e) => { e.stopPropagation(); setMenuFor(menuFor === u._id ? null : u._id); }}><DotsIcon size={15} /></button>
                   {menuFor === u._id && (
                     <UserMenu anchorRef={{ current: rowRefs.current[u._id] }} u={u} onClose={() => setMenuFor(null)}
-                      onMakeAdmin={makeAdmin} onRemoveAdmin={removeAdmin} onToggleGuide={toggleGuide} onDelete={remove} />
+                      onMakeAdmin={makeAdmin} onRemoveAdmin={removeAdmin} onToggleGuide={toggleGuide} onToggleAdvanced={toggleAdvanced} onDelete={remove} />
                   )}
                 </td>
               </tr>
