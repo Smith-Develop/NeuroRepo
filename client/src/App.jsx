@@ -17,6 +17,7 @@ import { AppContext } from "./appContext";
 
 export default function App() {
   const [user, setUser] = useState(undefined); // undefined = comprobando sesión, null = sin sesión
+  const [access, setAccess] = useState({}); // {loginMode, ip}: qué enseña la pantalla de inicio de sesión
   const [view, setView] = useState("chat");
   const [summary, setSummary] = useState(null); // {total, topFolders}
   const [docsVersion, setDocsVersion] = useState(0); // sube cada vez que la biblioteca puede haber cambiado
@@ -34,7 +35,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    api.me().then(({ user }) => setUser(user)).catch(() => setUser(null));
+    api.me().then(({ user, loginMode, ip }) => { setAccess({ loginMode, ip }); setUser(user); }).catch(() => setUser(null));
   }, []);
   useEffect(() => { if (user) load(); }, [user, load]);
   useEffect(() => {
@@ -57,6 +58,7 @@ export default function App() {
 
   async function logout() {
     await api.logout().catch(() => {});
+    api.me().then(({ loginMode, ip }) => setAccess({ loginMode, ip })).catch(() => {});
     setUser(null);
     setSummary(null);
     setFavorites(null);
@@ -90,7 +92,7 @@ export default function App() {
   }
 
   if (user === undefined) return null;
-  if (!user) return <Login onLogin={setUser} />;
+  if (!user) return <Login onLogin={setUser} loginMode={access.loginMode} ip={access.ip} />;
 
   return (
     <AppContext.Provider value={{ user, reloadDocuments: load, favorites, favoriteIds, toggleFavorite }}>

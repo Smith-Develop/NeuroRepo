@@ -58,6 +58,9 @@ export const api = {
   login: (dni, password) => req("/login", { method: "POST", body: password ? { dni, password } : { dni } }),
   logout: () => req("/logout", { method: "POST" }),
   me: () => req("/me"),
+  loginIp: () => req("/login/ip", { method: "POST" }),
+  loginSettings: () => req("/settings/login"),
+  saveLoginSettings: (loginMode) => req("/settings/login", { method: "PUT", body: { loginMode } }),
   changePassword: (current, next) => req("/me/password", { method: "POST", body: { current, next } }),
 
   createUser: (body) => req("/users", { method: "POST", body }),

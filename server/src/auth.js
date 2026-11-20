@@ -52,6 +52,15 @@ export function clearSessionCookie(res) {
   res.clearCookie(COOKIE_NAME);
 }
 
+// IP del ordenador que se conecta, para el acceso por IP. Se usa la del socket, NO X-Forwarded-For: sin
+// un proxy delante (instalación en Windows) cualquiera podría mandar esa cabecera y hacerse pasar por
+// otro ordenador. Solo si hay un proxy de confianza delante (Docker/Coolify) se activa TRUST_PROXY_IP.
+export function clientIp(req) {
+  const raw = process.env.TRUST_PROXY_IP === "true" ? req.ip : req.socket?.remoteAddress;
+  return String(raw || "").replace(/^::ffff:/, "");
+}
+export const IPV4 = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
+
 // Middleware no bloqueante: deja req.user (con role y, si lo tiene, su grupo con las carpetas permitidas) o null
 export async function attachUser(req, _res, next) {
   const token = parseCookies(req.headers.cookie)[COOKIE_NAME];

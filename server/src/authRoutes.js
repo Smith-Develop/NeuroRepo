@@ -1,7 +1,7 @@
 import { Router } from "express";
 import mongoose from "mongoose";
-import { User, Session, Group, ActivityLog } from "./models.js";
-import { hashPassword, verifyPassword, createSession, setSessionCookie, clearSessionCookie, requireAdmin, sessionToken } from "./auth.js";
+import { User, Session, Group, ActivityLog, AppConfig } from "./models.js";
+import { hashPassword, verifyPassword, createSession, setSessionCookie, clearSessionCookie, requireAdmin, sessionToken, clientIp, IPV4 } from "./auth.js";
 import { logActivity } from "./activityLog.js";
 
 const r = Router();
@@ -17,6 +17,9 @@ r.post("/login", wrap(async (req, res) => {
   if (!dni) return res.status(400).json({ error: "Escribe tu DNI." });
   const user = await User.findOne({ dni });
   if (!user) return res.status(401).json({ error: "DNI no reconocido." });
+  if (user.role !== "admin" && (await getLoginMode()) === "ip-only") {
+    return res.status(403).json({ error: "Solo se puede entrar desde un ordenador asignado. Pide a Informática que asigne la IP de tu ordenador." });
+  }
   if (user.role === "admin") {
     const password = text(req.body?.password, 200);
     if (!password) return res.status(401).json({ error: "Este DNI necesita contraseña.", needsPassword: true });
@@ -31,11 +34,50 @@ r.post("/logout", wrap(async (req, res) => {
   const token = (req.headers.cookie || "").match(/(?:^|;\s*)sid=([^;]+)/)?.[1];
   if (token) await Session.deleteOne({ _id: decodeURIComponent(token) });
   clearSessionCookie(res);
+  // Tras cerrar sesión no se vuelve a entrar solo por IP (si no, cerrar sesión no serviría de nada)
+  // hasta que se pulse «Entrar con este ordenador» o se cierre el navegador
+  res.cookie(NO_AUTO_COOKIE, "1", { httpOnly: true, sameSite: "lax" });
   res.status(204).end();
 }));
 
+// Sesión actual. Sin sesión, si la IP del ordenador está asignada a un usuario normal, entra solo.
+// Devuelve también el modo de acceso y la IP, para que la pantalla de inicio sepa qué enseñar.
+const NO_AUTO_COOKIE = "noauto";
+const getLoginMode = async () => (await AppConfig.findById("singleton", "loginMode").lean())?.loginMode || "ip-or-dni";
+async function loginByIp(req, res) {
+  const ip = clientIp(req);
+  const user = IPV4.test(ip) ? await User.findOne({ ips: ip, role: { $ne: "admin" } }) : null;
+  if (!user) return null;
+  const { token, expiresAt } = await createSession(user);
+  setSessionCookie(req, res, token, expiresAt);
+  res.clearCookie(NO_AUTO_COOKIE);
+  req.user = user;
+  await logActivity(req, "login.ip", `${user.name} (${user.dni}) desde ${ip}`);
+  return user;
+}
 r.get("/me", wrap(async (req, res) => {
-  res.json({ user: req.user ? publicUser(req.user) : null });
+  if (req.user) return res.json({ user: publicUser(req.user) });
+  const noAuto = /(?:^|;\s*)noauto=1/.test(req.headers.cookie || "");
+  const user = noAuto ? null : await loginByIp(req, res);
+  res.json({ user: user ? publicUser(user) : null, loginMode: await getLoginMode(), ip: clientIp(req) });
+}));
+
+// «Entrar con este ordenador» (después de cerrar sesión)
+r.post("/login/ip", wrap(async (req, res) => {
+  const user = await loginByIp(req, res);
+  if (!user) return res.status(403).json({ error: `Este ordenador (IP ${clientIp(req)}) no está asignado a ningún usuario de DocuPaz.` });
+  res.json({ user: publicUser(user) });
+}));
+
+// Modo de acceso (admin)
+r.get("/settings/login", requireAdmin, wrap(async (req, res) => {
+  res.json({ loginMode: await getLoginMode(), ip: clientIp(req) });
+}));
+r.put("/settings/login", requireAdmin, wrap(async (req, res) => {
+  const loginMode = req.body?.loginMode === "ip-only" ? "ip-only" : "ip-or-dni";
+  await AppConfig.updateOne({ _id: "singleton" }, { loginMode }, { upsert: true });
+  await logActivity(req, "settings.login", loginMode === "ip-only" ? "solo por IP" : "por IP o DNI");
+  res.json({ loginMode });
 }));
 
 // El admin cambia su propia contraseña; cierra el resto de sus sesiones abiertas.
@@ -73,7 +115,7 @@ r.post("/users", requireAdmin, wrap(async (req, res) => {
 }));
 
 r.get("/users", requireAdmin, wrap(async (req, res) => {
-  res.json(await User.find({}, "name dni role group canEditGuide canUseAdvanced createdAt").sort({ createdAt: 1 }).populate("group", "name").lean());
+  res.json(await User.find({}, "name dni role group canEditGuide canUseAdvanced ips createdAt").sort({ createdAt: 1 }).populate("group", "name").lean());
 }));
 
 r.patch("/users/:id", requireAdmin, wrap(async (req, res) => {
@@ -87,6 +129,14 @@ r.patch("/users/:id", requireAdmin, wrap(async (req, res) => {
 
   if (typeof req.body?.canEditGuide === "boolean") user.canEditGuide = req.body.canEditGuide;
   if (typeof req.body?.canUseAdvanced === "boolean") user.canUseAdvanced = req.body.canUseAdvanced;
+  if (Array.isArray(req.body?.ips)) {
+    const ips = [...new Set(req.body.ips.map((ip) => text(ip, 15)).filter(Boolean))].slice(0, 10);
+    const bad = ips.find((ip) => !IPV4.test(ip));
+    if (bad) return res.status(400).json({ error: `«${bad}» no es una IP válida (p. ej. 10.35.16.120).` });
+    const taken = ips.length ? await User.findOne({ _id: { $ne: user._id }, ips: { $in: ips } }, "name ips").lean() : null;
+    if (taken) return res.status(409).json({ error: `La IP ${ips.find((ip) => taken.ips.includes(ip))} ya está asignada a ${taken.name}.` });
+    user.ips = ips;
+  }
 
   if (req.body?.role === "user" && user.role === "admin") {
     if ((await countAdmins(user._id)) < 1) return res.status(400).json({ error: "Debe quedar al menos un admin." });
@@ -96,6 +146,7 @@ r.patch("/users/:id", requireAdmin, wrap(async (req, res) => {
     const password = text(req.body?.password, 200);
     if (password.length < 4) return res.status(400).json({ error: "El admin necesita una contraseña de al menos 4 caracteres." });
     user.role = "admin";
+    user.ips = []; // los admins nunca entran por IP
     user.passwordHash = hashPassword(password);
     user.group = null;
   } else if (user.role === "admin" && text(req.body?.password, 200)) {
@@ -105,7 +156,7 @@ r.patch("/users/:id", requireAdmin, wrap(async (req, res) => {
   await user.save();
   await user.populate("group", "name");
   await logActivity(req, "user.update", `${user.name} (${user.dni})`);
-  res.json({ _id: user._id, name: user.name, dni: user.dni, role: user.role, group: user.group, canEditGuide: user.canEditGuide, canUseAdvanced: user.canUseAdvanced });
+  res.json({ _id: user._id, name: user.name, dni: user.dni, role: user.role, group: user.group, canEditGuide: user.canEditGuide, canUseAdvanced: user.canUseAdvanced, ips: user.ips });
 }));
 
 r.delete("/users/:id", requireAdmin, wrap(async (req, res) => {

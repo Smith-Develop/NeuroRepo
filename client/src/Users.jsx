@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import { toast } from "./toast";
-import { UploadIcon, UserPlusIcon, UsersIcon, ShieldIcon, LockIcon, DotsIcon, TrashIcon, XIcon, HomeIcon, ChevronRightIcon, BookIcon, SparkleIcon } from "./icons";
+import { Select, LegoInput } from "./pickers";
+import { UploadIcon, UserPlusIcon, UsersIcon, ShieldIcon, LockIcon, DotsIcon, TrashIcon, XIcon, HomeIcon, ChevronRightIcon, BookIcon, SparkleIcon, LinkIcon } from "./icons";
 
 const COLORS = ["", "c2", "c3", "c4"];
 const initialsOf = (name) => (name || "?").trim().split(/\s+/).map((p) => p[0]).join("").slice(0, 2).toUpperCase();
@@ -66,7 +67,7 @@ function UserDialog({ groups, onClose, onCreated }) {
   );
 }
 
-function UserMenu({ anchorRef, u, onClose, onMakeAdmin, onRemoveAdmin, onToggleGuide, onToggleAdvanced, onDelete }) {
+function UserMenu({ anchorRef, u, onClose, onMakeAdmin, onRemoveAdmin, onToggleGuide, onToggleAdvanced, onEditIps, onDelete }) {
   const [pos, setPos] = useState(null);
   useEffect(() => {
     const r = anchorRef.current?.getBoundingClientRect();
@@ -93,8 +94,60 @@ function UserMenu({ anchorRef, u, onClose, onMakeAdmin, onRemoveAdmin, onToggleG
           <SparkleIcon size={14} />{u.canUseAdvanced ? "Quitar la búsqueda avanzada (IA)" : "Permitir la búsqueda avanzada (IA)"}
         </button>
       )}
+      {u.role !== "admin" && (
+        <button type="button" onClick={() => { onClose(); onEditIps(u); }}><LinkIcon size={14} />IP de sus ordenadores…</button>
+      )}
       <hr />
       <button type="button" className="danger" onClick={() => { onClose(); onDelete(u); }}><TrashIcon size={14} />Borrar usuario</button>
+    </div>
+  );
+}
+
+// IP de los ordenadores desde los que un usuario entra sin escribir nada. Las 10.133.x son de DHCP
+// (cambian), salvo algunas plantas: se avisa, porque otro ordenador podría recibir esa IP mañana.
+const isDhcp = (ip) => /^10\.133\./.test(ip);
+function IpDialog({ user, onClose, onSaved }) {
+  const [ips, setIps] = useState(user.ips || []);
+  const [error, setError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const valid = (ip) => /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/.test(ip);
+  async function save() {
+    setBusy(true);
+    setError("");
+    try {
+      await api.updateUser(user._id, { ips });
+      toast(ips.length ? `${user.name}: ${ips.length} IP asignada${ips.length > 1 ? "s" : ""}` : `${user.name} ya no entra por IP`);
+      onSaved();
+    } catch (e) { setError(e.message); setBusy(false); }
+  }
+  return (
+    <div className="overlay" role="dialog" aria-modal="true" aria-labelledby="ipT" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="dialog">
+        <div className="dlg-head">
+          <div className="tt"><h3 id="ipT">IP de los ordenadores de {user.name}</h3><p>Desde estas IP entrará en DocuPaz sin escribir nada.</p></div>
+          <button type="button" className="btn-icon" onClick={onClose} aria-label="Cerrar"><XIcon /></button>
+        </div>
+        <div className="dlg-body">
+          <div className="field">
+            <label htmlFor="ipIn">IP (Intro para añadir)</label>
+            <LegoInput id="ipIn" value={ips} onChange={setIps} ariaLabel="IP asignadas" placeholder="10.35.16.120" max={10} maxLen={15} />
+          </div>
+          {ips.some((ip) => !valid(ip)) && <p className="error" role="alert">No son IP válidas: {ips.filter((ip) => !valid(ip)).join(", ")}</p>}
+          {ips.some(isDhcp) && (
+            <div className="guide-warn" role="status"><LockIcon size={15} /><div><p>
+              <b>{ips.filter(isDhcp).join(", ")}</b> {ips.filter(isDhcp).length > 1 ? "son" : "es"} del rango 10.133 (DHCP): esas IP cambian, y si otro ordenador
+              la recibe entraría como {user.name}. Asígnala solo si es fija (plantas 10–13, Admisión, Gerencia) o tiene reserva DHCP.
+            </p></div></div>
+          )}
+          <p className="help" style={{ margin: 0 }}>Cualquiera que use ese ordenador entrará como {user.name}. En puestos compartidos, usa una cuenta genérica.</p>
+          {error && <p className="error" role="alert">{error}</p>}
+        </div>
+        <div className="dlg-foot">
+          <span className="grow" />
+          <button type="button" className="btn btn-ghost" onClick={onClose}>Cancelar</button>
+          <button type="button" className="btn btn-primary" onClick={save} disabled={busy || ips.some((ip) => !valid(ip))}>Guardar</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -111,6 +164,16 @@ export default function Users({ currentUser }) {
   const [busy, setBusy] = useState(false);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [menuFor, setMenuFor] = useState(null);
+  const [ipUser, setIpUser] = useState(null);
+  const [loginMode, setLoginMode] = useState(null);
+  useEffect(() => { api.loginSettings().then((s) => setLoginMode(s.loginMode)).catch(() => {}); }, []);
+  async function changeLoginMode(mode) {
+    if (mode === "ip-only" && !confirm("Con «Solo por IP», los usuarios que no tengan la IP de su ordenador asignada no podrán entrar (los administradores sí, con su contraseña). ¿Continuar?")) return;
+    try {
+      setLoginMode((await api.saveLoginSettings(mode)).loginMode);
+      toast(mode === "ip-only" ? "Ahora solo se entra desde ordenadores asignados" : "Ahora se puede entrar por IP o con el DNI");
+    } catch (e) { setError(e.message); }
+  }
   const fileRef = useRef(null);
   const rowRefs = useRef({});
 
@@ -253,6 +316,13 @@ export default function Users({ currentUser }) {
       {notice && <p className="notice" role="status">{notice}</p>}
       <div className="toolbar">
         <div className="input-icon"><UsersIcon size={15} /><input className="input" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Buscar por nombre o DNI…" aria-label="Buscar usuarios" /></div>
+        <span className="grow" />
+        {loginMode && (
+          <label className="help" style={{ display: "inline-flex", alignItems: "center", gap: 8 }}>Acceso de los usuarios
+            <Select style={{ width: 230 }} value={loginMode} onChange={changeLoginMode} ariaLabel="Acceso de los usuarios"
+              options={[{ value: "ip-or-dni", label: "Por IP o escribiendo el DNI" }, { value: "ip-only", label: "Solo por IP (ordenador asignado)" }]} />
+          </label>
+        )}
       </div>
       <div className="card" style={{ overflow: "hidden" }}>
         <table className="table">
@@ -273,7 +343,8 @@ export default function Users({ currentUser }) {
                 <td className="muted hide-sm" style={{ fontVariantNumeric: "tabular-nums" }}>{u.dni}</td>
                 <td>{u.role === "admin" ? <span className="badge accent"><span className="dot" />Admin</span> : <span className="badge"><span className="dot" />Usuario</span>}
                   {u.role !== "admin" && u.canEditGuide && <span className="badge ok" style={{ marginLeft: 6 }} title="Puede crear y editar fichas de la guía rápida"><BookIcon size={11} />Edita la guía</span>}
-                  {u.role !== "admin" && u.canUseAdvanced && <span className="badge accent" style={{ marginLeft: 6 }} title="Puede usar la búsqueda avanzada (la IA redacta respuestas)"><SparkleIcon size={11} />Búsqueda avanzada</span>}</td>
+                  {u.role !== "admin" && u.canUseAdvanced && <span className="badge accent" style={{ marginLeft: 6 }} title="Puede usar la búsqueda avanzada (la IA redacta respuestas)"><SparkleIcon size={11} />Búsqueda avanzada</span>}
+                  {u.role !== "admin" && u.ips?.length > 0 && <span className="badge" style={{ marginLeft: 6 }} title={`Entra sin escribir nada desde: ${u.ips.join(", ")}`}><LinkIcon size={11} />{u.ips.length === 1 ? u.ips[0] : `${u.ips.length} IP`}</span>}</td>
                 <td>
                   {u.role === "admin" ? <span className="badge accent"><ShieldIcon size={12} />Acceso total</span> : (
                     <>
@@ -290,7 +361,7 @@ export default function Users({ currentUser }) {
                     onClick={(e) => { e.stopPropagation(); setMenuFor(menuFor === u._id ? null : u._id); }}><DotsIcon size={15} /></button>
                   {menuFor === u._id && (
                     <UserMenu anchorRef={{ current: rowRefs.current[u._id] }} u={u} onClose={() => setMenuFor(null)}
-                      onMakeAdmin={makeAdmin} onRemoveAdmin={removeAdmin} onToggleGuide={toggleGuide} onToggleAdvanced={toggleAdvanced} onDelete={remove} />
+                      onMakeAdmin={makeAdmin} onRemoveAdmin={removeAdmin} onToggleGuide={toggleGuide} onToggleAdvanced={toggleAdvanced} onEditIps={setIpUser} onDelete={remove} />
                   )}
                 </td>
               </tr>
@@ -298,6 +369,7 @@ export default function Users({ currentUser }) {
           </tbody>
         </table>
       </div>
+      {ipUser && <IpDialog user={ipUser} onClose={() => setIpUser(null)} onSaved={() => { setIpUser(null); load(); }} />}
       {dialogOpen && (
         <UserDialog groups={groups} onClose={() => setDialogOpen(false)} onCreated={() => { setDialogOpen(false); load(); }} />
       )}

@@ -54,6 +54,9 @@ const appConfigSchema = new mongoose.Schema({
   libraryPath: { type: String, default: "" }, // relativa a LIBRARY_ROOT; "" = la propia raíz montada
   lastScanAt: { type: Date, default: null },
   lastScanCount: { type: Number, default: 0 },
+  // Acceso de los usuarios normales: "ip-or-dni" (por la IP de su ordenador o escribiendo el DNI) o
+  // "ip-only" (solo desde un ordenador con IP asignada; los admins, siempre con su contraseña)
+  loginMode: { type: String, enum: ["ip-or-dni", "ip-only"], default: "ip-or-dni" },
 });
 
 const userSchema = new mongoose.Schema(
@@ -69,6 +72,8 @@ const userSchema = new mongoose.Schema(
     canEditGuide: { type: Boolean, default: false },
     // Búsqueda avanzada (la IA redacta respuestas): solo los admins y a quien un admin se la active
     canUseAdvanced: { type: Boolean, default: false },
+    // IP de los ordenadores desde los que entra sin escribir nada (solo usuarios normales; cada IP, de uno solo)
+    ips: { type: [String], default: [], index: true },
   },
   { timestamps: true },
 );

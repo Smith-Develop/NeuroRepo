@@ -210,6 +210,19 @@ Nada depende de APIs de pago.
   archivos sueltos en la raíz solo los ve el admin. Los nombres de primer nivel de antes valen tal cual.
   Al renombrar una carpeta, `renameFolderPermissions` (routes.js) actualiza grupos y mensajes.
   `bootstrapAdmin()` crea el admin a partir de `BOOTSTRAP_ADMIN_NAME/DNI/PASSWORD` si no existe ninguno.
+- **Acceso por IP** (`authRoutes.js`): `User.ips` (IP de sus ordenadores, cada una de un solo usuario; los
+  admins nunca). `GET /me` sin sesión busca la IP del que se conecta (`clientIp`: la del **socket**, no
+  `X-Forwarded-For`, que sin proxy delante se podría falsificar; `TRUST_PROXY_IP=true` solo detrás de un
+  proxy de confianza, p. ej. Docker/Coolify, donde la del socket sería la del proxy) y, si es de un
+  usuario, abre sesión sola. Tras «Cerrar sesión» queda la cookie `noauto` (de sesión del navegador) para
+  no volver a entrar solo; «Entrar con este ordenador» (`POST /login/ip`) la quita.
+  `AppConfig.loginMode`: `ip-or-dni` (por defecto) o `ip-only` (sin IP asignada, «No tienes permiso» y
+  solo entran los admins con contraseña; `/login` rechaza a los usuarios normales). Se cambia en Usuarios
+  (`GET/PUT /settings/login`); la IP se asigna en el menú de cada usuario («IP de sus ordenadores…»,
+  avisa si es 10.133.x, el rango DHCP). La IP identifica el ordenador, no a la persona: decisión del
+  cliente, que no puede dar nombre DNS a la app ni meterla en la zona Intranet (sin eso, la autenticación
+  integrada de Windows no es automática con acceso por IP; se descartó la opción con usuario y contraseña
+  de Windows).
 - `server/src/authRoutes.js` – `POST /login {dni, password?}`: los usuarios normales entran solo con DNI;
   si el DNI es del admin y no se manda contraseña, responde `401 {needsPassword:true}` para que el cliente
   pida el segundo campo. `/users`, `/users/import` (texto `Nombre,DNI` por línea, upsert por DNI),
@@ -302,7 +315,8 @@ Nada depende de APIs de pago.
   `DocumentModal` (pestaña «Versiones», solo admin) y las filas de `Explorer` (botón de papelera, solo
   admin; el admin puede abrir el modal de cualquier archivo, tenga vista previa o no).
 - `client/src/Login.jsx` – un único campo DNI; si el servidor responde `needsPassword`, aparece el segundo
-  campo de contraseña (solo le pasa al admin).
+  campo de contraseña (solo le pasa al admin). En modo `ip-only` muestra «No tienes permiso» con la IP,
+  «Volver a intentarlo con este ordenador» y «Entrar como administrador».
 - `client/src/Users.jsx` – menú de cada usuario: «Permitir editar la guía rápida» (`canEditGuide`, insignia
   «Edita la guía»; `PATCH /users/:id {canEditGuide}`) y «Permitir la búsqueda avanzada (IA)»
   (`canUseAdvanced`, insignia «Búsqueda avanzada»). Sin ese permiso el chat no enseña el conmutador
