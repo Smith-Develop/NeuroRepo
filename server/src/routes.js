@@ -4,7 +4,7 @@ import multer from "multer";
 import mammoth from "mammoth";
 import * as XLSX from "xlsx";
 import { readFileSync } from "node:fs";
-import { Document, FolderConfig, FileVersion, TrashItem, Group, User, GuideEntry, GuideEntryHistory } from "./models.js";
+import { Document, FolderConfig, FileVersion, TrashItem, Group, User, GuideEntry, GuideEntryHistory, DocView } from "./models.js";
 import { requireAdmin, requireGuideEditor, canSeeFolder, canUseAdvanced, folderFilter, folderAncestors } from "./auth.js";
 import { searchDocuments, topScore, bestPassages, stemsOf, queryConcepts, highlightTerms, isRelevant } from "./search.js";
 import {
@@ -373,6 +373,41 @@ r.put("/guide/synonyms", requireGuideEditor, wrap(async (req, res) => {
   res.json({ text: saved.synonyms, updatedBy: saved.updatedBy, updatedAt: saved.updatedAt });
 }));
 
+// Vistas por usuario y documento. Abrir un documento puede pedir varias cosas a la vez (vista previa +
+// texto, o trozos de un vídeo): dentro de VIEW_WINDOW_MS cuenta como una sola vista.
+const VIEW_WINDOW_MS = 30_000;
+function recordView(userId, docId) {
+  const now = new Date();
+  DocView.updateOne({ user: userId, doc: docId, lastAt: { $lt: new Date(now - VIEW_WINDOW_MS) } }, { $inc: { count: 1 }, $set: { lastAt: now } })
+    .then((r) => (r.matchedCount ? null : DocView.updateOne({ user: userId, doc: docId }, { $setOnInsert: { count: 1, lastAt: now } }, { upsert: true })))
+    .catch(() => {}); // una vista que no se cuenta no es un error para quien abre el documento
+}
+
+// Inicio del chat: los favoritos del usuario que más abre y, si quedan huecos, sus documentos más
+// abiertos aunque no sean favoritos (cada uno con `favorite` y `views`).
+const TOP_MAX = 6;
+r.get("/documents/top", wrap(async (req, res) => {
+  const [user, views] = await Promise.all([
+    User.findById(req.user._id, "favorites").lean(),
+    DocView.find({ user: req.user._id }, "doc count").sort({ count: -1, lastAt: -1 }).limit(100).lean(),
+  ]);
+  const favs = (user?.favorites || []).map(String);
+  const count = new Map(views.map((v) => [String(v.doc), v.count]));
+  const docs = await Document.find({ _id: { $in: [...favs, ...views.map((v) => v.doc)] } }, LIST_FIELDS).lean();
+  const visible = new Map(docs.filter((d) => canSeeFolder(req.user, d.folder)).map((d) => [String(d._id), d]));
+  const favRecency = new Map(favs.map((id, i) => [id, i]));
+  const top = favs
+    .filter((id) => visible.has(id))
+    .sort((a, b) => (count.get(b) || 0) - (count.get(a) || 0) || favRecency.get(b) - favRecency.get(a))
+    .map((id) => ({ ...visible.get(id), favorite: true, views: count.get(id) || 0 }));
+  for (const v of views) {
+    if (top.length >= TOP_MAX) break;
+    const id = String(v.doc);
+    if (visible.has(id) && !favs.includes(id)) top.push({ ...visible.get(id), favorite: false, views: v.count });
+  }
+  res.json(top.slice(0, TOP_MAX));
+}));
+
 // Favoritos del usuario: documentos marcados desde el chat para no tener que volver a buscarlos.
 const FAVORITES_MAX = 300;
 r.get("/favorites", wrap(async (req, res) => {
@@ -433,6 +468,7 @@ r.get("/documents/locate", wrap(async (req, res) => {
 r.get("/documents/:id/view", wrap(async (req, res) => {
   const doc = await findAccessibleDoc(req, res);
   if (!doc) return;
+  recordView(req.user._id, doc._id);
   const root = await getActiveLibraryPath();
   const abs = safeResolve(root, doc.path);
   res.sendFile(abs);
@@ -450,12 +486,14 @@ const PREVIEW_MAX_HTML = 8 * 1024 * 1024;
 r.get("/documents/:id/text", wrap(async (req, res) => {
   const doc = await findAccessibleDoc(req, res);
   if (!doc) return;
+  recordView(req.user._id, doc._id);
   res.json({ text: doc.extractedText || "" });
 }));
 
 r.get("/documents/:id/preview", wrap(async (req, res) => {
   const doc = await findAccessibleDoc(req, res);
   if (!doc) return;
+  recordView(req.user._id, doc._id);
   if (!WORDX_EXTS.has(doc.ext) && !SHEET_EXTS.has(doc.ext)) return res.status(415).json({ error: "Este tipo de archivo no tiene vista previa." });
   if (doc.size > PREVIEW_MAX_FILE) return res.status(413).json({ error: "El archivo es demasiado grande para la vista previa. Descárgalo para abrirlo." });
   const abs = safeResolve(await getActiveLibraryPath(), doc.path);
@@ -495,6 +533,7 @@ r.get("/documents/:id/preview", wrap(async (req, res) => {
 r.get("/documents/:id/download", wrap(async (req, res) => {
   const doc = await findAccessibleDoc(req, res);
   if (!doc) return;
+  recordView(req.user._id, doc._id);
   const root = await getActiveLibraryPath();
   const abs = safeResolve(root, doc.path);
   res.download(abs, doc.filename);

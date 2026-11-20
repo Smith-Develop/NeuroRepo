@@ -692,3 +692,20 @@ mark { background: var(--warn-soft); color: inherit; border-radius: 3px; padding
 .syn-group .lego-field { flex: 1; }
 .syn-group.incomplete .lego-field { border-color: var(--warn); }
 .syn-group > .btn-icon { margin-top: 8px; }
+
+/* Inicio del chat: favoritos más vistos (en lugar de las sugerencias) */
+.suggest-title { align-self: flex-start; margin-top: 18px; font-size: 12px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; color: var(--text-3); }
+.suggest-title + .suggest { margin-top: 8px; }
+.sugg.top-doc { flex-direction: row; align-items: center; gap: 10px; padding: 10px 12px; min-width: 0; }
+.sugg.top-doc .ftype { flex: none; }
+.top-doc-txt { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.top-doc-txt b { font-size: 13px; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.top-doc-txt small { font-size: 11.5px; color: var(--text-3); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sugg.top-doc > svg { color: var(--warn); flex: none; }
+
+/* Selector de carpeta del chat con buscador */
+.scope-menu { width: 300px; max-width: calc(100vw - 32px); }
+.scope-search { display: flex; align-items: center; gap: 8px; padding: 4px 8px 8px; margin-bottom: 4px; border-bottom: 1px solid var(--border); color: var(--text-3); }
+.scope-search input { flex: 1; min-width: 0; height: 30px; border: 0; outline: 0; background: none; font-size: 13px; color: var(--text); }
+.scope-list { max-height: 260px; overflow-y: auto; }
+.scope-list button.on { color: var(--accent-text); background: var(--accent-soft); }

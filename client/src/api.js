@@ -39,6 +39,7 @@ export const api = {
   synonyms: () => req("/guide/synonyms"),
   saveSynonyms: (text) => req("/guide/synonyms", { method: "PUT", body: { text } }),
   favorites: () => req("/favorites"),
+  topDocuments: () => req("/documents/top"),
   addFavorite: (id) => req(`/favorites/${id}`, { method: "PUT" }),
   removeFavorite: (id) => req(`/favorites/${id}`, { method: "DELETE" }),
   locateDocument: (d) => req(`/documents/locate?${new URLSearchParams({ id: d._id, folder: d.folder || "", filename: d.filename || "" })}`),

@@ -230,6 +230,12 @@ Nada depende de APIs de pago.
   se manda el primer mensaje pasa al transcript normal, con burbujas estilo Telegram (usuario a la derecha,
   Docu a la izquierda) y cada resultado como una `DocumentCard`. Mientras se busca, el mensaje `loading`
   muestra a Docu en modo "buscando" (`<Docu mode="loading">`, ver más abajo) en vez del texto plano.
+- Inicio del chat (`chat-landing`): en vez de las sugerencias fijas, «Tus favoritos más vistos»
+  (`GET /documents/top`: los favoritos ordenados por vistas y, si quedan huecos, los documentos que más
+  abre el usuario; como mucho 6; sin datos, las sugerencias de siempre). Las vistas se cuentan en
+  `DocView {user, doc, count, lastAt}` desde `/view`, `/text`, `/preview` y `/download` (`recordView`:
+  lo que se pide en 30 s cuenta como una sola vista). El selector «Todas mis carpetas» del compositor
+  tiene buscador (con más de 5 carpetas; Intro elige la primera).
 - `client/src/Docu.jsx` – la mascota: SVG + CSS puro (sin librerías), con dos modos por `animated`/`mode`:
   idle (flota, respira, parpadea) y `mode="loading"` (un meneo más juguetón, ojos mirando a los lados y
   una lupa que rebota) para la espera de una búsqueda. Respeta `prefers-reduced-motion`. Se reutiliza en

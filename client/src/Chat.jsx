@@ -1,10 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
-import DocumentCard from "./DocumentCard";
+import DocumentCard, { badgeFor, canPreviewDoc } from "./DocumentCard";
+import DocumentModal from "./DocumentModal";
 import GuideCard from "./GuideCard";
 import Docu from "./Docu";
 import { toast } from "./toast";
-import { FolderIcon, ChevronDownIcon, ChevronRightIcon, UpArrowIcon, LockIcon, SendRequestIcon, CalendarIcon, FileIcon, WrenchIcon, SearchIcon, SparkleIcon } from "./icons";
+import { FolderIcon, ChevronDownIcon, ChevronRightIcon, UpArrowIcon, LockIcon, SendRequestIcon, CalendarIcon, FileIcon, WrenchIcon, SearchIcon, SparkleIcon, StarIcon, EyeIcon } from "./icons";
 import { getConversation, saveConversation } from "./chatHistory";
 
 let seq = 0;
@@ -64,7 +65,20 @@ const SUGERENCIAS = [
 
 function Composer({ dock, value, onChange, onSend, scope, scopeOptions, onScope, mode, onMode, autoFocus }) {
   const taRef = useRef(null);
+  const scopeRef = useRef(null);
   const [scopeOpen, setScopeOpen] = useState(false);
+  const [scopeQuery, setScopeQuery] = useState("");
+  const norm = (t) => t.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  // Buscador de carpetas: todas las palabras escritas tienen que aparecer en el nombre
+  const words = norm(scopeQuery).split(/\s+/).filter(Boolean);
+  const scopeMatches = scopeOptions.filter((f) => words.every((w) => norm(f).includes(w)));
+  function pickScope(f) { onScope(f); setScopeOpen(false); setScopeQuery(""); }
+  useEffect(() => {
+    if (!scopeOpen) return undefined;
+    const close = (e) => { if (!scopeRef.current?.contains(e.target)) { setScopeOpen(false); setScopeQuery(""); } };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [scopeOpen]);
 
   function fit(el) {
     el.style.height = "auto";
@@ -81,18 +95,30 @@ function Composer({ dock, value, onChange, onSend, scope, scopeOptions, onScope,
         onChange={(e) => { onChange(e.target.value); fit(e.target); }}
         onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); onSend(); } }} />
       <div className="bar">
-        <div style={{ position: "relative" }}>
-          <button type="button" className="scope" onClick={() => setScopeOpen((o) => !o)}>
+        <div style={{ position: "relative" }} ref={scopeRef}>
+          <button type="button" className="scope" onClick={() => setScopeOpen((o) => !o)} aria-expanded={scopeOpen}>
             <FolderIcon size={14} /><span>{scope === "all" ? "Todas mis carpetas" : scope}</span><ChevronDownIcon size={14} />
           </button>
           {scopeOpen && (
-            <div className="menu on" style={{ position: "absolute", left: 0, bottom: "calc(100% + 8px)" }}
-              onMouseLeave={() => setScopeOpen(false)}>
-              <button type="button" onClick={() => { onScope("all"); setScopeOpen(false); }}><FolderIcon size={14} />Todas mis carpetas</button>
-              {scopeOptions.length > 0 && <hr />}
-              {scopeOptions.map((f) => (
-                <button type="button" key={f} onClick={() => { onScope(f); setScopeOpen(false); }}><FolderIcon size={14} />{f}</button>
-              ))}
+            <div className="menu on scope-menu" style={{ position: "absolute", left: 0, bottom: "calc(100% + 8px)" }}>
+              {scopeOptions.length > 5 && (
+                <div className="scope-search">
+                  <SearchIcon size={14} />
+                  <input autoFocus value={scopeQuery} onChange={(e) => setScopeQuery(e.target.value)} placeholder="Buscar carpeta…" aria-label="Buscar carpeta"
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") { e.preventDefault(); if (scopeMatches[0]) pickScope(scopeMatches[0]); }
+                      if (e.key === "Escape") { e.preventDefault(); setScopeOpen(false); setScopeQuery(""); }
+                    }} />
+                </div>
+              )}
+              {!words.length && <button type="button" onClick={() => pickScope("all")}><FolderIcon size={14} />Todas mis carpetas</button>}
+              {!words.length && scopeOptions.length > 0 && <hr />}
+              <div className="scope-list">
+                {scopeMatches.map((f) => (
+                  <button type="button" key={f} className={f === scope ? "on" : ""} onClick={() => pickScope(f)}><FolderIcon size={14} />{f}</button>
+                ))}
+                {words.length > 0 && !scopeMatches.length && <p className="help" style={{ padding: "6px 10px", margin: 0 }}>Ninguna carpeta con «{scopeQuery}»</p>}
+              </div>
             </div>
           )}
         </div>
@@ -116,6 +142,17 @@ export default function Chat({ user, conversationId, topFolders = [], onOpenDocu
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
   const [scope, setScope] = useState(saved?.scope || "all");
+  // Inicio: los favoritos que más abre el usuario (o sus documentos más abiertos)
+  const [top, setTop] = useState(null);
+  const [topOpen, setTopOpen] = useState(null);
+  useEffect(() => {
+    if (messages.length) return;
+    api.topDocuments().then(setTop).catch(() => setTop([]));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  function openTop(d) {
+    if (canPreviewDoc(d)) setTopOpen(d);
+    else window.location.href = api.downloadUrl(d._id);
+  }
   const [storedMode, setModeState] = useState(initialMode);
   // Sin permiso de búsqueda avanzada (lo da un admin en Usuarios), siempre simple y sin conmutador
   const mode = user?.canUseAdvanced ? storedMode : "simple";
@@ -185,13 +222,32 @@ export default function Chat({ user, conversationId, topFolders = [], onOpenDocu
           <h1>¿Qué documento buscas hoy?</h1>
           <p className="sub">Escribe un nombre, un tema o unas palabras clave. Docu busca en tus carpetas y te muestra los documentos más relevantes, listos para abrir o descargar.</p>
           <Composer value={input} onChange={setInput} onSend={() => ask(input)} scope={scope} scopeOptions={scopeOptions} onScope={setScope} mode={mode} onMode={user?.canUseAdvanced ? setMode : null} autoFocus />
-          <div className="suggest">
-            {SUGERENCIAS.map(({ q, Icon }) => (
-              <button type="button" key={q} className="sugg" onClick={() => ask(q)}>
-                <span className="ic"><Icon size={15} /></span><b>{q}</b>
-              </button>
-            ))}
-          </div>
+          {top?.length > 0 ? (
+            <>
+              <div className="suggest-title">{top.some((d) => d.favorite) ? "Tus favoritos más vistos" : "Tus documentos más abiertos"}</div>
+              <div className="suggest">
+                {top.map((d) => {
+                  const { label, cls } = badgeFor(d.ext);
+                  return (
+                    <button type="button" key={d._id} className="sugg top-doc" onClick={() => openTop(d)} title={`${d.folder ? `${d.folder}/` : ""}${d.filename}`}>
+                      <span className={`ftype sm ${cls}`}>{label}</span>
+                      <span className="top-doc-txt"><b>{d.filename}</b><small>{d.folder || "Raíz"}{d.views ? ` · ${d.views} ${d.views === 1 ? "vez" : "veces"}` : ""}</small></span>
+                      {d.favorite && <StarIcon size={13} filled />}
+                    </button>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            <div className="suggest">
+              {SUGERENCIAS.map(({ q, Icon }) => (
+                <button type="button" key={q} className="sugg" onClick={() => ask(q)}>
+                  <span className="ic"><Icon size={15} /></span><b>{q}</b>
+                </button>
+              ))}
+            </div>
+          )}
+          {topOpen && <DocumentModal doc={topOpen} onClose={() => setTopOpen(null)} />}
           {onOpenDocumentos && (
             <button type="button" className="browse" onClick={onOpenDocumentos}>
               <FolderIcon size={14} />Explorar toda la biblioteca<ChevronRightIcon size={14} />

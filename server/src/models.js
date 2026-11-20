@@ -163,6 +163,16 @@ const guideEntryHistorySchema = new mongoose.Schema({
 const searchSettingsSchema = new mongoose.Schema({ _id: { type: String }, synonyms: { type: String, default: "" }, updatedBy: String, updatedAt: Date });
 
 export const Document = mongoose.model("Document", documentSchema);
+// Veces que cada usuario abre (ve, descarga o previsualiza) cada documento: «más vistos» del inicio del chat
+const docViewSchema = new mongoose.Schema({
+  user: { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
+  doc: { type: mongoose.Schema.Types.ObjectId, ref: "Document", required: true },
+  count: { type: Number, default: 0 },
+  lastAt: { type: Date, default: Date.now },
+});
+docViewSchema.index({ user: 1, doc: 1 }, { unique: true });
+docViewSchema.index({ user: 1, count: -1 });
+export const DocView = mongoose.model("DocView", docViewSchema);
 export const FileVersion = mongoose.model("FileVersion", fileVersionSchema);
 export const TrashItem = mongoose.model("TrashItem", trashItemSchema);
 export const Group = mongoose.model("Group", groupSchema);
